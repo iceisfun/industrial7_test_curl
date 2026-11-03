@@ -1,0 +1,210 @@
+# Focused curl test corpus: one test per line, '<number> <category> <name>'.
+# Generated from curl/tests/data/testNNNN. Edit freely; run.sh reads the numbers.
+0001 core HTTP GET
+0005 proxy HTTP over proxy
+0006 cookies HTTP with simple cookie send
+0009 request-body HTTP RFC1867-type formposting
+0012 transfer HTTP range support
+0015 output --write-out test
+0016 auth HTTP with proxy authorization
+0018 url multiple requests using {} in URL
+0023 errors unsupported protocol:// URL
+0025 redirect looping HTTP Location: following with --max-redirs
+0037 core HTTP GET with nothing returned from server
+0039 request-body HTTP RFC1867-type formposting with filename= and type=
+0050 redirect HTTP follow redirect with ../../
+0053 cookies HTTP, junk session cookies
+0055 redirect HTTP follow redirect with single slash in path
+0072 auth HTTP with Digest *OR* Basic authorization
+0074 output HTTP, urlglob {}-retrieval and -o #[num] usage
+0087 transfer urlglob with out of range -o #[num] usage
+0157 core HTTP GET with --anyauth (when the server requires none)
+0163 request-body HTTP multipart formpost with contents from a file
+0167 auth HTTP with proxy-requiring-Basic to site-requiring-Digest
+0171 cookies HTTP, get cookie with dot prefixed full domain
+0178 transfer HTTP response with negative Content-Length
+0200 file basic file:// file
+0202 file two file:// URLs to stdout
+0204 file "upload" with file://
+0220 core HTTP GET gzip compressed content
+0231 file file:// with resume
+0234 redirect HTTP, proxy, site+proxy auth and Location: --location-trusted
+0258 auth HTTP multipart POST without Expect: using proxy anyauth (Digest)
+0269 transfer HTTP --ignore-content-length
+0277 request-body HTTP RFC1867-type formposting with custom Content-Type
+0279 proxy HTTP with proxy string including http:// and user only
+0287 core HTTP proxy CONNECT with custom User-Agent header
+0317 redirect HTTP with custom Authorization: and redirect to new host
+0320 cookies Load cookies from file for localhost
+0321 headers --etag-save to stdout append to file
+0339 headers Check if --etag-save saved correct etag to a file
+0341 headers A non existing file with --etag-compare is a blank
+0343 headers Both --etag-compare and --etag-save to save new Etag
+0344 headers Both --etag-compare and -save store new Etag using non-existing file
+0345 headers Both --etag-compare and -save store new Etag in pre-existing file
+0355 file Alt-Svc from file with too long date
+0360 output Error on both --fail-with-body and --fail
+0366 errors HTTP --retry-max-time with too long Retry-After
+0368 transfer Append dash if -r range specified without one
+0369 errors --etag-save with bad path then working transfer
+0379 output --remove-on-error with --no-clobber and an added number
+0384 request-body HTTP with --json from stdin
+0388 auth HTTP with Digest and multiple qop values with leading space
+0392 cookies HTTP secure cookies over localhost with and w/o proxy
+0395 transfer HTTP and out-of-range Content-Length
+0397 core HTTP GET zstd compressed content of size more than CURL_MAX_WRITE_SIZE
+0399 url 65536-byte-long hostname in URL
+0413 file alt-svc using hostname with trailing dot on host from file
+0424 output -w with urle.* variables
+0429 output Expand environment variable in config file - too long name
+0433 output Verify XDG_CONFIG_HOME use to find curlrc
+0448 output Environment variables within config file, unbalanced braces
+0451 transfer Variable from file that is JSON and URL encoded (with NUL byte)
+0458 request-body variable expand the filename with --expand-output
+0459 output config file argument with whitespace missing quotes, check line number
+0473 headers Check if --etag-save saved correct etag to a file on 301
+0482 output --remove-on-error with --continue-at
+0483 cookies HTTP cookies with long expire dates
+0486 redirect .netrc with redirect and "default" with no password or login
+0491 request-body Two globbed HTTP PUTs, the second upload file is missing
+0500 url simple libcurl HTTP GET tool
+0507 multi multi interface get with non-existing hostname
+0513 request-body send HTTP POST using read callback that returns CURL_READFUNC_ABORT
+0537 core HTTP GET with a HUGE number of file descriptors open
+0549 proxy FTP RETR over proxy with CURLOPT_PROXY_TRANSFER_MODE
+0552 auth HTTP proxy auth Digest with 70K POST data from read callback
+0643 request-body HTTP multi-part mimepost using read callback for the file part
+0658 url Pass URL to libcurl with CURLOPT_CURLU
+0663 redirect HTTP redirect with dotdots and whitespaces in absolute Location: URL
+0666 request-body HTTP mime post with binary-encoded huge data contents
+0684 auth netrc with no login
+0690 output -O with URL without path using trailing slash
+0693 output --etag-save with --create-dirs
+0695 request-body MIME parts reuse as a child part
+0705 proxy Attempt connect to non-listening SOCKS5 proxy
+0718 auth HTTP proxy CONNECT (no auth) with proxy returning 407 and closing
+0731 url IPFS with gateway URL and path from gateway file
+0736 url IPFS with IPFS_PATH set, no trailing slash
+0743 output --config with a 127-byte line
+0752 errors --retry and -f on an HTTP 404 response
+0756 request-body mix --output and --out-null
+0768 transfer HTTP with letters after the number in Content-Length
+0777 file --ssl-sessions with weird sessions in file
+0785 transfer --variable with a file byte range without end
+0789 transfer --variable with a file and byte range out of file
+0791 transfer --variable with a byte range using plain assign, out of range
+0898 redirect HTTP with custom auth and cookies redirected to HTTP on a diff port
+0970 core HTTP GET with JSON output
+0979 redirect -u with redirect to absolute URL using same origin and auth
+0990 request-body use -w %output{}
+0996 file --skip-existing with file present
+1031 redirect HTTP Location: following to a query string
+1061 core HTTP proxy CONNECT auth Digest, large headers and chunked data
+1081 redirect HTTP no Location: on second URL 'redirect_url' check
+1092 proxy FTP with type=i over HTTP proxy
+1095 auth HTTP with Digest and realm with quoted quotes
+1104 cookies HTTP cookie expiry date at Jan 1 00:00:00 GMT 1970
+1109 core HTTP GET with URL that contains fragment after the path
+1118 url URL without slash and @-letter in query
+1126 headers HTTP 200 If-Modified-Since with newer document
+1127 headers HTTP 200 If-Modified-Since with older document
+1128 headers HTTP 200 If-Modified-Since with old+new documents
+1142 redirect HTTP redirect to http://// (four slashes!)
+1146 file --proto-default file
+1150 proxy HTTP proxy with URLs using different ports
+1155 cookies HTTP cookie with parameter word as name
+1156 transfer HTTP resume/range fail range-error content-range combinations
+1157 core Get -H headers from empty file
+1176 request-body --output using #0
+1188 output --write-out with %{onerror} and %{urlnum} to stderr
+1216 cookies HTTP cookie domains tailmatching the hostname
+1248 proxy Non-proxied host plus --proxy option and --noproxy option
+1254 proxy override NO_PROXY by --noproxy and access target URL through proxy
+1259 auth HTTP URL with semicolon in password
+1270 redirect Basic 'redirect_url'
+1271 output --write-out from file with empty file
+1283 transfer globbing range with same start and stop
+1289 errors globbing with overflow and bad syntax
+1290 url Verify URL globbing ignores []
+1293 request-body Multipart formpost to two URLs, the first failing
+1294 core HTTP GET with split initial request send
+1315 file HTTP -F with three files, one with explicit type
+1331 cookies HTTP --proxy-anyauth and 407 with cookies
+1340 core HTTP GET with -O -J and Content-Disposition, -D file
+1372 core HTTP GET -o fname -i without Content-Disposition, -D file
+1421 proxy Reusing HTTP proxy connection for two different hostnames
+1426 request-body Okay binary output to terminal
+1441 file Check --write-out with trailing %
+1443 core HTTP GET with -O and --remote-time
+1445 file file:// with --remote-time
+1448 redirect Redirect following to UTF-8 IDN hostname
+1481 url --libcurl with TLS version options
+1490 file "upload" with file:// overwriting existing
+1498 core HTTP PUT from stdin using period
+1499 transfer HTTP chunked encoding and chunked trailer, twice
+1515 errors caching of manual libcurl DNS entries after DNS cache timeout
+1531 request-body CURLOPT_POSTFIELDS with binary data set after multi_add_handle
+1534 url CURLINFO_FILETIME init and reset
+1563 redirect Make sure redirects to CURLPROTO_GOPHER are forbidden by default
+1566 headers --etag-compare that gets a 304 back should not overwrite the file
+1619 headers --etag-save to stdout
+1629 cookies cookies with trailing dot after PSL domain
+1633 errors --retry with a 429 response and Retry-After:
+1639 output -O with URL without path using many trailing slashes
+1641 core HTTP GET -J, a redirect and Content-Disposition in the second response
+1646 auth netrc parsing without user match but user in URL
+1662 redirect HTTP formpost from callback and a redirect and switch to GET
+1687 url --libcurl resets the handle between --next operations
+1691 transfer IPFS path with encoded slashes and dotdot stays under the gateway
+1696 output -w transfer timers stay zero after TLS handshake timeout
+1701 proxy HTTP/1.1 idle connection with unsolicited data is not reused
+1703 file basic file:// file with UTF-8 characters
+1712 output config file with argument using single quotes
+1714 errors TELNET download with --max-filesize
+1723 transfer HTTP with two chunked Transfer-Encoding not listed last
+1740 errors --silent suppresses Note: messages when verbose
+1862 errors HSTS with extreme max-age
+1901 request-body Chunked HTTP POST from callback with CURLOPT_POSTFIELDSIZE set
+1903 cookies CURLOPT_COOKIEFILE then reset then set again
+1910 redirect HTTP credentials with newline and redirect
+1919 auth set CURLOPT_XOAUTH2_BEARER and do connection reuse
+1937 core HTTP POST with AWS_SIGV4
+1957 transfer HTTP AWS_SIGV4 with X-Xxx-Content-Sha256 of arbitrary payload
+1972 request-body HTTP AWS_SIGV4 for AWS S3: MIMEPOST
+2013 request-body upload with a glob
+2015 redirect HTTP with cookie with with -b and redirect to new host
+2049 proxy Connect to specific host
+2056 auth HTTP Negotiate authentication (stub krb5)
+2061 auth HTTP with RFC7616 SHA256 Digest authorization
+2066 auth HTTP with RFC7616 Digest, bad password, SHA-256 and userhash
+2072 file file:// with Unix path for the case of extra slashes
+2078 auth curl --negotiate should not send empty POST request only
+2092 transfer glob range that ends with 9223372036854775807
+2271 request-body reject automatic HTTP data upload resume
+2301 url WebSockets via callback (raw mode) + curl_ws_send()
+2304 proxy WebSockets curl_ws_recv() with closed connection
+2318 cookies Get cookies from PSL domain then use *.domain
+2411 url reference a named glob not set
+2412 errors checking curl_multi_fdset on nothing to do
+2418 transfer aws-sigv4 for s3express does not encode the path again
+2429 auth use netrc file with only comments
+3011 request-body --output-dir with --create-dirs
+3029 multi HTTP with multiple -D
+3030 multi HTTP with multiple transfers in one -D
+3031 core --dump-header with --create-dirs
+3039 request-body parallel download and upload progress after retries
+3040 transfer parallel progress after retained auto-resume retries
+3101 redirect HTTP auth without redirection protocols
+3104 cookies CURLOPT_COOKIELIST with Netscape format
+3203 file Get a directory using file://
+3204 headers Use --etag-compare and --etag-save on an existing file
+3223 proxy HTTP connection not reused after partial/aborted response
+5008 errors httpsig: error - missing --httpsig-key
+5010 errors httpsig: error - non-existent key file
+5013 auth httpsig: non-default port in @authority
+5014 url httpsig: @query explicitly requested, no query in URL
+5017 core httpsig: user-supplied Signature header skips signing
+5018 request-body httpsig: PUT upload
+5020 errors httpsig: error - rejects legacy '@' component syntax
+5027 redirect AWS SigV4 trusted redirect to a different host
+5029 proxy -w IP info and connect time after TLS handshake timeout
