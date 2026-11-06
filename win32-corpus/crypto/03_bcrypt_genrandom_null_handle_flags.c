@@ -12,11 +12,16 @@
  *       control case.
  *
  * Success: the flagless NULL-handle call returns a non-success NTSTATUS
- *   (documented STATUS_INVALID_HANDLE 0xC0000008 or STATUS_INVALID_PARAMETER
- *   0xC000000D), and the control call with the flag returns STATUS_SUCCESS.
+ *   (STATUS_INVALID_HANDLE 0xC0000008), and the control call with the flag returns STATUS_SUCCESS.
  *
  * Source: lib/curlx/winapi.c:118-122 (curl only ever passes the flag, so this
  *   test pins the behaviour that makes that choice necessary).
+ *
+ * Probed on Windows 10 22H2: flagless NULL handle -> STATUS_INVALID_HANDLE
+ * (0xC0000008); NULL buffer -> STATUS_INVALID_PARAMETER (0xC000000D); length 0
+ * -> success; unknown flag bit 0x80 with the system flag -> 0xC000000D; flag
+ * 0x100 alone -> 0xC0000008; with the system flag, BCRYPT_RNG_USE_ENTROPY_IN_BUFFER
+ * is accepted.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -70,10 +75,39 @@ int main(void)
            "STATUS_SUCCESS\n", NAME);
     return 1;
   }
-  if(st != CURL_STATUS_INVALID_HANDLE && st != CURL_STATUS_INVALID_PARAM) {
-    printf("FAIL %s: unexpected status 0x%08lx for NULL handle without flag, "
-           "GetLastError %lu\n", NAME, (unsigned long)st,
-           (unsigned long)GetLastError());
+  /* Windows 10 22H2: STATUS_INVALID_HANDLE (0xC0000008), every time. */
+  if(st != CURL_STATUS_INVALID_HANDLE) {
+    printf("FAIL %s: status 0x%08lx for NULL handle without flag, expected "
+           "0xC0000008\n", NAME, (unsigned long)st);
+    return 1;
+  }
+
+  /* Other argument errors (probed on Windows 10 22H2). */
+  st = BCryptGenRandom(NULL, NULL, 32, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+  if(st != CURL_STATUS_INVALID_PARAM) {
+    printf("FAIL %s: NULL buffer status 0x%08lx, expected 0xC000000D\n", NAME, (unsigned long)st);
+    return 1;
+  }
+  st = BCryptGenRandom(NULL, buf, 0, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+  if(st != STATUS_SUCCESS) {
+    printf("FAIL %s: zero-length request status 0x%08lx, expected success\n", NAME, (unsigned long)st);
+    return 1;
+  }
+  st = BCryptGenRandom(NULL, buf, 32, BCRYPT_USE_SYSTEM_PREFERRED_RNG | 0x80);
+  if(st != CURL_STATUS_INVALID_PARAM) {
+    printf("FAIL %s: unknown flag 0x80 status 0x%08lx, expected 0xC000000D\n", NAME, (unsigned long)st);
+    return 1;
+  }
+  st = BCryptGenRandom(NULL, buf, 32, 0x100);
+  if(st != CURL_STATUS_INVALID_HANDLE) {
+    printf("FAIL %s: flag 0x100 without the system flag status 0x%08lx, expected 0xC0000008\n",
+           NAME, (unsigned long)st);
+    return 1;
+  }
+  /* BCRYPT_RNG_USE_ENTROPY_IN_BUFFER is accepted together with the system flag. */
+  st = BCryptGenRandom(NULL, buf, 32, BCRYPT_USE_SYSTEM_PREFERRED_RNG | BCRYPT_RNG_USE_ENTROPY_IN_BUFFER);
+  if(st != STATUS_SUCCESS) {
+    printf("FAIL %s: ENTROPY_IN_BUFFER status 0x%08lx, expected success\n", NAME, (unsigned long)st);
     return 1;
   }
 
