@@ -10,7 +10,7 @@
  *   (retried until the reader has entered ReadFile; ERROR_NOT_FOUND is the
  *   expected answer before that). The reader's ReadFile then fails with
  *   ERROR_OPERATION_ABORTED and transfers 0 bytes, and the thread exits.
- *   If the API is missing (wine), the test SKIPs with ERROR_CALL_NOT_IMPLEMENTED.
+ *   If the API is missing (pre-Vista), the test SKIPs with ERROR_CALL_NOT_IMPLEMENTED.
  * Source: none. Generic Win32 contract. curl does not call this API.
  */
 
