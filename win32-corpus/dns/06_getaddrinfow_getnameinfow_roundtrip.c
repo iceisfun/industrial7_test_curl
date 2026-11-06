@@ -11,9 +11,8 @@
  * Success: GetAddrInfoW(L"127.0.0.1", L"8080", AI_NUMERICHOST) returns 0 with
  * one AF_INET entry; GetNameInfoW on its sockaddr with NI_NUMERICHOST |
  * NI_NUMERICSERV yields L"127.0.0.1" and L"8080". GetAddrInfoW(L"localhost")
- * returns 0 and includes 127.0.0.1 or ::1. GetNameInfoW into a 4-character
- * host buffer returns non-zero (the exact code is stack-specific, so only the
- * failure itself is asserted).
+ * returns 0 with ::1 then 127.0.0.1. GetNameInfoW into a 4-character
+ * host buffer returns 10014 (WSAEFAULT; the ANSI getnameinfo returns 122).
  *
  * Source: lib/curl_addrinfo.c:111-130 (getaddrinfo wrapper; this is its
  *         wide-character counterpart), lib/idn.c:175-176 (the wide string
@@ -87,11 +86,11 @@ int main(void)
   /* A host buffer that cannot hold "127.0.0.1" plus NUL must fail. */
   rc = GetNameInfoW(res->ai_addr, (socklen_t)res->ai_addrlen,
                     host, 4, serv, 32, NI_NUMERICHOST | NI_NUMERICSERV);
-  /* Buffer-too-small is reported as a non-zero code. MSDN documents it as
-     EAI_OVERFLOW-class; the exact value differs between stacks (wine returns
-     -12), so only the failure itself is asserted. */
-  if(rc == 0)
-    FAILF("GetNameInfoW with 4-char host buffer succeeded (must not truncate silently)");
+  /* Windows 10 22H2: the wide GetNameInfoW reports a too-small host buffer as
+     10014 (WSAEFAULT), while the ANSI getnameinfo reports 122
+     (ERROR_INSUFFICIENT_BUFFER, see test 17). It never truncates silently. */
+  if(rc != WSAEFAULT)
+    FAILF("GetNameInfoW with 4-char host buffer returned %d, expected 10014", rc);
 
   FreeAddrInfoW(res);
   res = NULL;
@@ -115,8 +114,10 @@ int main(void)
         loop++;
     }
   }
-  if(loop < 1)
-    FAILF("GetAddrInfoW(localhost) has no loopback entry");
+  if(loop != 2)
+    FAILF("GetAddrInfoW(localhost) has %d loopback entries, expected 2 (::1 and 127.0.0.1)", loop);
+  if(res->ai_family != AF_INET6 || !res->ai_next || res->ai_next->ai_family != AF_INET)
+    FAILF("GetAddrInfoW(localhost) order is not ::1 then 127.0.0.1");
 
 out:
   if(res)

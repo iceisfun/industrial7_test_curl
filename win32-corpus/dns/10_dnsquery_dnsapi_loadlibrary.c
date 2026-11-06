@@ -13,11 +13,10 @@
  * Success: if dnsapi.dll or an export is missing, or DnsQuery_A returns
  * ERROR_CALL_NOT_IMPLEMENTED, the test SKIPs. The query for
  * "corpus-nx-test.invalid" under DNS_QUERY_NO_WIRE_QUERY (ANSI and wide)
- * returns non-zero with a NULL record list. Then DnsQuery_A and DnsQuery_W
- * for "localhost" type A with the same options return 0 and a DNS_TYPE_A
- * record whose IPv4 bytes are 127.0.0.1. Under wine only, if the localhost
- * query fails with ERROR_INVALID_NAME, the test SKIPs after the NXDOMAIN
- * checks, because wine's DnsQuery does not resolve localhost here.
+ * returns 9701 (DNS_ERROR_RECORD_DOES_NOT_EXIST) with a NULL record list.
+ * Then DnsQuery_A and DnsQuery_W for "localhost" type A with the same
+ * options return 0 and a DNS_TYPE_A record whose IPv4 bytes are 127.0.0.1
+ * (probed on Windows 10 22H2).
  *
  * Source: no direct curl call site; curl resolves through getaddrinfo()
  *         (lib/curl_addrinfo.c:111-130). This covers the dnsapi surface the
@@ -78,12 +77,6 @@ static int record_is_loopback_w(const DNS_RECORDW *r)
   return b[0] == 127 && b[1] == 0 && b[2] == 0 && b[3] == 1;
 }
 
-/* Wine exports wine_get_version from ntdll; real Windows does not. */
-static int is_wine(void)
-{
-  HMODULE nt = GetModuleHandleW(L"ntdll.dll");
-  return nt != NULL && GetProcAddress(nt, "wine_get_version") != NULL;
-}
 
 int main(void)
 {
@@ -111,22 +104,21 @@ int main(void)
   st = pQa("corpus-nx-test.invalid", DNS_TYPE_A, opts, NULL, &ra, NULL);
   if(st == ERROR_CALL_NOT_IMPLEMENTED)
     SKIPF("DnsQuery_A not implemented by this runtime");
-  if(st == 0)
-    FAILF("DnsQuery_A(corpus-nx-test.invalid) with NO_WIRE_QUERY succeeded");
+  if(st != 9701) /* DNS_ERROR_RECORD_DOES_NOT_EXIST, probed on Windows 10 22H2 */
+    FAILF("DnsQuery_A(corpus-nx-test.invalid) with NO_WIRE_QUERY returned %lu, expected 9701",
+          (unsigned long)st);
   if(ra)
     FAILF("DnsQuery_A failed but still returned a record list");
 
   st = pQw(L"corpus-nx-test.invalid", DNS_TYPE_A, opts, NULL, &rw, NULL);
-  if(st == 0)
-    FAILF("DnsQuery_W(corpus-nx-test.invalid) with NO_WIRE_QUERY succeeded");
+  if(st != 9701)
+    FAILF("DnsQuery_W(corpus-nx-test.invalid) with NO_WIRE_QUERY returned %lu, expected 9701",
+          (unsigned long)st);
   if(rw)
     FAILF("DnsQuery_W failed but still returned a record list");
 
   /* ANSI query for localhost, cache/hosts only. */
   st = pQa("localhost", DNS_TYPE_A, opts, NULL, &ra, NULL);
-  if(st == ERROR_INVALID_NAME && is_wine())
-    SKIPF("wine DnsQuery_A cannot resolve localhost with NO_WIRE_QUERY "
-          "(ERROR_INVALID_NAME); the NXDOMAIN checks above passed");
   if(st != 0)
     FAILF("DnsQuery_A(localhost) returned %lu", (unsigned long)st);
   if(!ra)

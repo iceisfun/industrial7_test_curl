@@ -12,8 +12,8 @@
  * Success: SOCK_DGRAM + IPPROTO_UDP request returns 0 with ai_socktype ==
  * SOCK_DGRAM and ai_protocol == IPPROTO_UDP, sin_port == htons(53). A
  * SOCK_STREAM request returns SOCK_STREAM/IPPROTO_TCP. A zero socktype with
- * zero protocol returns 0 with every entry in {SOCK_STREAM, SOCK_DGRAM,
- * SOCK_RAW} and at least one entry. A non-numeric service with
+ * zero protocol returns 0 with exactly one entry whose socktype and protocol
+ * are both 0 (probed on Windows 10 22H2). A non-numeric service with
  * AI_NUMERICSERV returns non-zero.
  *
  * Source: lib/vdns/asyn-thrdd.c:401-411 (ai_socktype from
@@ -45,19 +45,12 @@ static int status = 0;
     printf(" [WSA=%d GLE=%lu]\n", WSAGetLastError(), (unsigned long)GetLastError()); \
     status = 1; goto out; } while(0)
 
-/* True when running under wine (ntdll exports wine_get_version). */
-static int is_wine(void)
-{
-  HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-  return ntdll && GetProcAddress(ntdll, "wine_get_version") != NULL;
-}
-
 int main(void)
 {
   WSADATA wsa;
   struct addrinfo hints, *res = NULL, *ai;
   struct sockaddr_in *sin;
-  int rc, n = 0, wsa_ok = 0, skipped = 0;
+  int rc, n = 0, wsa_ok = 0;
 
   if(WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
     FAILF("WSAStartup failed");
@@ -99,8 +92,10 @@ int main(void)
   freeaddrinfo(res);
   res = NULL;
 
-  /* Unspecified socktype and protocol: the stack may return several
-     entries, but every one must be a valid socket type. */
+  /* Unspecified socktype and protocol: Windows 10 returns exactly one entry
+     per address with ai_socktype == 0 and ai_protocol == 0 (it does NOT
+     expand into TCP/UDP/RAW entries). curl always sets both from the
+     transport, so it never sees this form. */
   hints.ai_socktype = 0;
   hints.ai_protocol = 0;
   rc = getaddrinfo("127.0.0.1", "53", &hints, &res);
@@ -109,21 +104,12 @@ int main(void)
   n = 0;
   for(ai = res; ai; ai = ai->ai_next) {
     n++;
-    if(ai->ai_socktype == 0 && ai->ai_protocol == 0 && is_wine()) {
-      /* Wine's getaddrinfo() returns one entry with socktype and protocol
-         both 0 for unspecified hints. Real Windows fills in a valid socket
-         type (SOCK_STREAM/SOCK_DGRAM/SOCK_RAW), so this is a wine gap. */
-      printf("SKIP %s: wine getaddrinfo returns ai_socktype=0/ai_protocol=0 "
-             "for unspecified hints (wine gap, not a Windows result)\n", T);
-      skipped = 1;
-      goto out;
-    }
-    if(ai->ai_socktype != SOCK_STREAM && ai->ai_socktype != SOCK_DGRAM &&
-       ai->ai_socktype != SOCK_RAW)
-      FAILF("unexpected ai_socktype=%d", ai->ai_socktype);
+    if(ai->ai_socktype != 0 || ai->ai_protocol != 0)
+      FAILF("unspecified hints: ai_socktype=%d ai_protocol=%d, expected 0/0",
+            ai->ai_socktype, ai->ai_protocol);
   }
-  if(n < 1)
-    FAILF("unspecified-socktype request returned no entries");
+  if(n != 1)
+    FAILF("unspecified-socktype request returned %d entries, expected 1", n);
   freeaddrinfo(res);
   res = NULL;
 
@@ -141,8 +127,6 @@ out:
     freeaddrinfo(res);
   if(wsa_ok)
     WSACleanup();
-  if(skipped)
-    return 77;
   if(status == 0)
     printf("PASS %s\n", T);
   return status;

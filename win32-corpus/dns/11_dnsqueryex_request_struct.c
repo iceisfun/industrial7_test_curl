@@ -12,15 +12,19 @@
  * APIs: LoadLibraryW, GetProcAddress, DnsQueryEx, DnsFree, CreateEventW,
  *       WaitForSingleObject, FreeLibrary.
  *
- * Success: synchronous DnsQueryEx with Version=DNS_QUERY_REQUEST_VERSION1,
- * QueryName=L"localhost", QueryType=DNS_TYPE_A, QueryOptions=
- * DNS_QUERY_NO_WIRE_QUERY, returns 0 and the result's QueryStatus is 0 with
- * an A record for 127.0.0.1. Asynchronous mode returns 0 or DNS_REQUEST_PENDING
- * (9506); the completion callback fires within 10 seconds with the same
- * record. Result lists are freed with DnsFree(DnsFreeRecordList). An
- * ERROR_CALL_NOT_IMPLEMENTED return SKIPs. Under wine only, the stub return
- * DNS_ERROR_RCODE_NOT_IMPLEMENTED (9004) also SKIPs; on any other runtime
- * that status is a FAIL.
+ * Success (probed on Windows 10 22H2, 20+ repetitions): synchronous DnsQueryEx
+ * (callback NULL) with Version=DNS_QUERY_REQUEST_VERSION1, QueryName=
+ * L"localhost", QueryType=DNS_TYPE_A, QueryOptions=DNS_QUERY_NO_WIRE_QUERY
+ * returns 0 with QueryStatus 0 and an A record for 127.0.0.1. With a
+ * completion callback set and a locally answered name (localhost, 127.0.0.1)
+ * DnsQueryEx returns 0 with QueryStatus 0 and NO record list and never calls
+ * the callback. A name that needs the resolver (example.invalid, no
+ * NO_WIRE_QUERY) returns DNS_REQUEST_PENDING (9506) and the callback fires
+ * exactly once; DnsCancelQuery on such a request returns 0 and the callback
+ * reports ERROR_CANCELLED (1223). Bad arguments (Version 7, NULL QueryName,
+ * result Version 9) return ERROR_INVALID_PARAMETER (87). A type-A query for
+ * "::1" returns 9560 (DNS_ERROR_INVALID_IP_ADDRESS). Result lists are freed
+ * with DnsFree(DnsFreeRecordList).
  *
  * Source: no direct curl call site. The DNS_QUERY_REQUEST layout is the
  *         Win8 SDK definition; the result feeds the same loopback check as
@@ -79,20 +83,15 @@ typedef struct corpus_dns_query_result {
   PVOID Reserved;
 } CORPUS_DNS_QUERY_RESULT;
 
+/* DNS_QUERY_CANCEL: opaque 32 bytes */
+typedef struct { char Reserved[32]; } CORPUS_DNS_CANCEL;
+
 typedef VOID (WINAPI *CORPUS_QUERY_COMPLETION)(PVOID, CORPUS_DNS_QUERY_RESULT *);
 
 typedef DNS_STATUS (WINAPI *PFN_DnsQueryEx)(CORPUS_DNS_QUERY_REQUEST *,
-                                            CORPUS_DNS_QUERY_RESULT *, PVOID);
+                                            CORPUS_DNS_QUERY_RESULT *, CORPUS_DNS_CANCEL *);
 typedef void (WINAPI *PFN_DnsFree)(PVOID, int);
-
-#define CORPUS_DNS_RCODE_NOT_IMPLEMENTED 9004
-
-/* Wine exports wine_get_version from ntdll; real Windows does not. */
-static int is_wine(void)
-{
-  HMODULE nt = GetModuleHandleW(L"ntdll.dll");
-  return nt != NULL && GetProcAddress(nt, "wine_get_version") != NULL;
-}
+typedef DNS_STATUS (WINAPI *PFN_DnsCancelQuery)(CORPUS_DNS_CANCEL *);
 
 static volatile LONG cb_calls = 0;
 static DNS_STATUS cb_status = 0xFFFFFFFF;
@@ -125,7 +124,9 @@ int main(void)
   CORPUS_DNS_QUERY_REQUEST req;
   CORPUS_DNS_QUERY_RESULT res;
   DNS_STATUS st;
-  int wait_ok;
+  PFN_DnsCancelQuery pCancelQuery;
+  CORPUS_DNS_CANCEL cancel;
+  int i;
 
   dns = LoadLibraryW(L"dnsapi.dll");
   if(!dns)
@@ -147,8 +148,6 @@ int main(void)
   st = pQueryEx(&req, &res, NULL);
   if(st == ERROR_CALL_NOT_IMPLEMENTED)
     SKIPF("DnsQueryEx not implemented by this runtime");
-  if(st == CORPUS_DNS_RCODE_NOT_IMPLEMENTED && is_wine())
-    SKIPF("wine DnsQueryEx is a stub returning DNS_ERROR_RCODE_NOT_IMPLEMENTED (9004)");
   if(st != 0)
     FAILF("sync DnsQueryEx returned %lu", (unsigned long)st);
   if(res.QueryStatus != 0)
@@ -158,39 +157,85 @@ int main(void)
   pFree(res.pQueryRecords, CORPUS_DNS_FREE_RECORD_LIST);
   res.pQueryRecords = NULL;
 
-  /* Asynchronous: callback set, must report pending or complete at once. */
+  /* Callback set but the name is answered locally: Windows returns 0 with
+     no records and never invokes the callback. */
   cb_event = CreateEventW(NULL, TRUE, FALSE, NULL);
   if(!cb_event)
     FAILF("CreateEventW failed");
-  memset(&res, 0, sizeof(res));
-  res.Version = CORPUS_RESULTS_VERSION1;
-  req.pQueryCompletionCallback = (PVOID)(CORPUS_QUERY_COMPLETION)query_done;
-  req.pQueryContext = (PVOID)&cb_event;
+  for(i = 0; i < 20; i++) {
+    static const PCWSTR local_names[] = { L"localhost", L"127.0.0.1" };
+    memset(&res, 0, sizeof(res));
+    res.Version = CORPUS_RESULTS_VERSION1;
+    req.QueryName = local_names[i & 1];
+    req.pQueryCompletionCallback = (PVOID)(CORPUS_QUERY_COMPLETION)query_done;
+    req.pQueryContext = (PVOID)&cb_event;
+    cb_calls = 0;
+    st = pQueryEx(&req, &res, &cancel);
+    if(st != 0 || res.QueryStatus != 0 || res.pQueryRecords != NULL) {
+      FAILF("callback-mode local query #%d: st=%lu QueryStatus=%lu records=%p, expected 0/0/NULL",
+            i, (unsigned long)st, (unsigned long)res.QueryStatus, (void *)res.pQueryRecords);
+    }
+    Sleep(20);
+    if(InterlockedCompareExchange(&cb_calls, 0, 0) != 0)
+      FAILF("callback ran for a locally answered query #%d", i);
+  }
 
+  /* A name that needs the resolver: pending, then cancelled. */
+  pCancelQuery = (PFN_DnsCancelQuery)(void *)GetProcAddress(dns, "DnsCancelQuery");
+  if(!pCancelQuery)
+    SKIPF("DnsCancelQuery not exported");
+  for(i = 0; i < 5; i++) {
+    memset(&res, 0, sizeof(res));
+    memset(&cancel, 0, sizeof(cancel));
+    res.Version = CORPUS_RESULTS_VERSION1;
+    req.QueryName = L"cancel.example.invalid";
+    req.QueryOptions = 0;
+    req.pQueryCompletionCallback = (PVOID)(CORPUS_QUERY_COMPLETION)query_done;
+    cb_calls = 0;
+    cb_status = 0xFFFFFFFF;
+    ResetEvent(cb_event);
+    st = pQueryEx(&req, &res, &cancel);
+    if(st != CORPUS_DNS_REQUEST_PENDING)
+      FAILF("resolver query returned %lu, expected DNS_REQUEST_PENDING", (unsigned long)st);
+    st = pCancelQuery(&cancel);
+    if(st != 0)
+      FAILF("DnsCancelQuery returned %lu, expected 0", (unsigned long)st);
+    if(WaitForSingleObject(cb_event, 10000) != WAIT_OBJECT_0)
+      FAILF("callback did not run after DnsCancelQuery");
+    Sleep(20);
+    if(InterlockedCompareExchange(&cb_calls, 0, 0) != 1 || cb_status != ERROR_CANCELLED)
+      FAILF("cancelled query: callback ran %ld times with status %lu, expected once with 1223",
+            (long)cb_calls, (unsigned long)cb_status);
+    if(cb_records)
+      FAILF("cancelled query returned records");
+  }
+
+  /* Argument validation. */
+  memset(&req, 0, sizeof(req));
+  memset(&res, 0, sizeof(res));
+  req.Version = 7;
+  req.QueryName = L"localhost";
+  req.QueryType = DNS_TYPE_A;
+  res.Version = CORPUS_RESULTS_VERSION1;
   st = pQueryEx(&req, &res, NULL);
-  if(st == CORPUS_DNS_REQUEST_PENDING) {
-    wait_ok = WaitForSingleObject(cb_event, 10000) == WAIT_OBJECT_0;
-    if(!wait_ok)
-      FAILF("async DnsQueryEx callback did not fire within 10 seconds");
-    if(InterlockedCompareExchange(&cb_calls, 0, 0) != 1)
-      FAILF("completion callback ran %ld times, expected 1",
-            (long)InterlockedCompareExchange(&cb_calls, 0, 0));
-    if(cb_status != 0)
-      FAILF("async completion status=%lu", (unsigned long)cb_status);
-    if(!first_is_loopback(cb_records))
-      FAILF("async completion did not return A 127.0.0.1");
-    pFree(cb_records, CORPUS_DNS_FREE_RECORD_LIST);
-  }
-  else if(st == 0) {
-    /* Completed inline: the callback may or may not have been used. The
-       result structure itself must carry the answer. */
-    if(res.QueryStatus != 0 || !first_is_loopback(res.pQueryRecords))
-      FAILF("inline async DnsQueryEx did not return A 127.0.0.1");
-    pFree(res.pQueryRecords, CORPUS_DNS_FREE_RECORD_LIST);
-  }
-  else
-    FAILF("async DnsQueryEx returned %lu, expected 0 or DNS_REQUEST_PENDING",
-          (unsigned long)st);
+  if(st != ERROR_INVALID_PARAMETER)
+    FAILF("request Version 7 returned %lu, expected 87", (unsigned long)st);
+  req.Version = CORPUS_REQUEST_VERSION1;
+  req.QueryName = NULL;
+  st = pQueryEx(&req, &res, NULL);
+  if(st != ERROR_INVALID_PARAMETER)
+    FAILF("NULL QueryName returned %lu, expected 87", (unsigned long)st);
+  req.QueryName = L"localhost";
+  req.QueryOptions = DNS_QUERY_NO_WIRE_QUERY;
+  res.Version = 9;
+  st = pQueryEx(&req, &res, NULL);
+  if(st != ERROR_INVALID_PARAMETER)
+    FAILF("result Version 9 returned %lu, expected 87", (unsigned long)st);
+  res.Version = CORPUS_RESULTS_VERSION1;
+  req.QueryName = L"::1";
+  st = pQueryEx(&req, &res, NULL);
+  if(st != 9560)
+    FAILF("A query for ::1 returned %lu, expected 9560", (unsigned long)st);
 
 out:
   if(cb_event)
