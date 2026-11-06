@@ -16,7 +16,7 @@
  * Success: every thread reads back exactly its own tag after all threads
  *          have written; the main thread's tag is unchanged; each worker's
  *          first read (before writing) is NULL.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

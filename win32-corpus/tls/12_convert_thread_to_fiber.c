@@ -16,7 +16,7 @@
  *          it; IsThreadAFiber is TRUE; the fiber body runs and observes that
  *          it is not the main fiber; control returns to the main fiber; the
  *          thread is no longer a fiber after ConvertFiberToThread.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

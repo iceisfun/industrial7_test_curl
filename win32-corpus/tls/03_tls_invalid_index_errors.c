@@ -15,7 +15,7 @@
  *          on TLS_OUT_OF_INDEXES returns NULL with a non-zero GetLastError;
  *          after TlsFree(idx), a second TlsFree of idx returns FALSE.
  *          (TlsSetValue on a freed index is undocumented and not asserted.)
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

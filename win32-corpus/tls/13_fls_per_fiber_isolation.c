@@ -15,7 +15,7 @@
  * Success: thread's FLS value 0x1111 is still there after the child fiber
  *          runs; the child reads NULL on entry and then 0x2222 after its own
  *          write; the thread fiber reads 0x1111 after the switch back.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

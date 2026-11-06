@@ -14,7 +14,7 @@
  *          exactly once with the stored value; a second FlsFree on that index
  *          returns FALSE; a slot with no destructor frees with TRUE and no
  *          callback is involved.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

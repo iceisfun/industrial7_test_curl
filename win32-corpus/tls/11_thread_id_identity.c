@@ -16,8 +16,7 @@
  *          and != main id; the worker's own Curl_thread_is_current-style check
  *          is TRUE inside the worker and FALSE against main's id; GetThreadId of
  *          the worker handle equals the worker's self-reported id.
- *          SKIP if GetThreadId is not exported (pre-Vista hosts).
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
@@ -70,8 +69,8 @@ int main(void)
 
     k32 = LoadLibraryW(L"kernel32.dll");
     if(!k32) {
-        printf("SKIP %s: LoadLibrary(kernel32.dll) failed\n", TEST_NAME);
-        return 77;
+        printf("FAIL %s: LoadLibrary(kernel32.dll) failed\n", TEST_NAME);
+        return 1;
     }
     {
         /* Convert FARPROC to the real signature without a function-pointer
@@ -82,8 +81,8 @@ int main(void)
             memcpy(&p_GetThreadId, &fp, sizeof(fp));
     }
     if(!p_GetThreadId) {
-        printf("SKIP %s: GetThreadId not exported by this kernel32\n", TEST_NAME);
-        return 77;
+        printf("FAIL %s: GetThreadId not exported by this kernel32\n", TEST_NAME);
+        return 1;
     }
 
     g_main_id = GetCurrentThreadId();

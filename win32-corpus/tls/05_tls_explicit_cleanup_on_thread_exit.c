@@ -16,7 +16,7 @@
  * Success: worker's explicit free runs once (counter == 1); the worker's
  *          slot reads NULL after the free; main's slot still holds main's
  *          sentinel after the worker exits; the worker reports no failures.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

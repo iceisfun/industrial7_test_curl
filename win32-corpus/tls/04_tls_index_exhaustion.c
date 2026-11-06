@@ -14,7 +14,7 @@
  * Success: at least TLS_MINIMUM_AVAILABLE indexes are allocated; all indexes
  *          are distinct; every stored value reads back exactly; all frees
  *          succeed; one re-allocation after freeing succeeds.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

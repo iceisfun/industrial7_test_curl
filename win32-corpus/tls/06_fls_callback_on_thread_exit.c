@@ -14,7 +14,7 @@
  * Success: after worker A (value set) exits, the callback has run exactly once
  *          with that value on worker A's own thread id; after worker B (value
  *          never set) exits, the callback count stays at 1.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

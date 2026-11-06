@@ -15,7 +15,7 @@
  * Success: main reads back 0x5151 after two workers have each written their
  *          own value; each worker reads NULL on entry and its own value on
  *          exit; main's value is unchanged; invalid index calls fail as above.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

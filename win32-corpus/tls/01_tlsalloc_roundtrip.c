@@ -13,7 +13,7 @@
  *          GetLastError()==0; each stored pointer reads back identical;
  *          NULL can be stored and read back with GetLastError()==0; TlsFree
  *          returns TRUE.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE

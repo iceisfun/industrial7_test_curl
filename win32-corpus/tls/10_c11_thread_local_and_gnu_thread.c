@@ -14,7 +14,7 @@
  * Success: each thread's first read of each variable equals its initializer;
  *          writes in the worker do not appear in main; the function-scope
  *          _Thread_local counter increments independently per thread.
- * Exit: 0 PASS, 1 FAIL, 77 SKIP.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
