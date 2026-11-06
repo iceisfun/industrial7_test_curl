@@ -3,7 +3,7 @@
  * Purpose: WSAPoll readiness reporting as an alternative to select() for the
  *          curl poll path (lib/select.c uses poll() when available). WSAPoll is
  *          resolved at runtime with LoadLibrary/GetProcAddress so that a missing
- *          export on older Windows or wine yields SKIP instead of a link error.
+ *          export on a Windows older than Vista yields SKIP instead of a link error.
  * APIs: LoadLibraryA, GetProcAddress, FreeLibrary, WSAPoll (via pointer),
  *       socket, bind, listen, connect, accept, send, recv, closesocket.
  * Success:
@@ -12,9 +12,9 @@
  *   - a connected socket reports POLLWRNORM with timeout 0.
  *   - an idle connected socket reports no POLLRDNORM with timeout 0.
  *   - after 4 bytes are sent, POLLRDNORM is reported and recv returns 4 bytes.
- *   - after the peer closes, POLLRDNORM or POLLHUP is reported and recv returns
- *     0 (EOF). Wine reports the close as POLLHUP without POLLRDNORM; the EOF
- *     check on recv is the decisive assertion either way.
+ *   - after the peer closes (FIN), WSAPoll returns 1 with revents exactly
+ *     POLLHUP (0x2): Windows does not add POLLRDNORM (probed 20 times, std and
+ *     adm); recv then returns 0 (EOF).
  * Source: lib/select.c:97-99 (Curl_poll chooses poll() when HAVE_POLL is defined),
  *         lib/connect.c:385 (Curl_poll used while connect is pending).
  */
@@ -177,8 +177,8 @@ static int body(pfn_WSAPoll_t fn)
     closesocket(client);
     client = INVALID_SOCKET;
     rc = poll_one(fn, conn, POLLRDNORM, 2000, &rev);
-    if (rc != 1 || (rev & (POLLRDNORM | POLLHUP)) == 0) {
-        printf("FAIL %s: peer close not reported readable or hung up (rc=%d revents=0x%x)\n",
+    if (rc != 1 || rev != POLLHUP) {
+        printf("FAIL %s: peer close: rc=%d revents=0x%x, expected 1 / POLLHUP (0x2) alone (Win10 22H2, 20 runs)\n",
                TEST_NAME, rc, (unsigned)rev);
         goto out;
     }

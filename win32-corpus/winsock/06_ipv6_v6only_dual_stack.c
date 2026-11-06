@@ -50,9 +50,9 @@ static int set_v6only(SOCKET s, int value)
 /*
  * Returns 0 on success, -1 on getsockopt error, and 2 when the stack reports an
  * option length other than sizeof(int). Windows returns a 4-byte DWORD for
- * IPV6_V6ONLY; wine returns optlen 1 and writes only the low byte, so the
- * upper bytes keep the -1 sentinel (reads back -255). That is a wine gap, not
- * a Windows result, and the caller turns it into a SKIP.
+ * IPV6_V6ONLY (probed on Win10 22H2: optlen 4, and a 1 byte buffer fails with
+ * WSAEFAULT), unlike TCP_NODELAY/SO_KEEPALIVE which report optlen 1. The caller
+ * treats any other length as a FAIL.
  */
 static int get_v6only(SOCKET s, int *out)
 {
@@ -156,9 +156,9 @@ static int part_a(void)
     {
         int gr = get_v6only(listener, &v);
         if (gr == 2) {
-            printf("SKIP %s: wine gap - getsockopt(IPV6_V6ONLY) returns a 1-byte optlen, not a 4-byte DWORD\n",
+            printf("FAIL %s: getsockopt(IPV6_V6ONLY) optlen is not 4 (Win10 22H2 returns a 4 byte DWORD)\n",
                    TEST_NAME);
-            rc = 77;
+            rc = 1;
             goto out;
         }
         if (gr != 0 || v != 1) {
@@ -280,9 +280,9 @@ static int part_b(void)
     {
         int gr = get_v6only(listener, &v);
         if (gr == 2) {
-            printf("SKIP %s: wine gap - getsockopt(IPV6_V6ONLY) returns a 1-byte optlen, not a 4-byte DWORD\n",
+            printf("FAIL %s: getsockopt(IPV6_V6ONLY) optlen is not 4 (Win10 22H2 returns a 4 byte DWORD)\n",
                    TEST_NAME);
-            rc = 77;
+            rc = 1;
             goto out;
         }
         if (gr != 0 || v != 0) {

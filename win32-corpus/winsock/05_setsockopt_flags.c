@@ -6,8 +6,11 @@
  * APIs: setsockopt, getsockopt, socket, bind, listen, connect, accept,
  *       closesocket, WSAGetLastError.
  * Success:
- *   - TCP_NODELAY (IPPROTO_TCP) set to 1 reads back 1, then 0 reads back 0.
- *   - SO_KEEPALIVE set to 1 reads back 1, then 0 reads back 0.
+ *   - TCP_NODELAY (IPPROTO_TCP) set to 1 reads back 1, then 0 reads back 0,
+ *     5 reads back 1. getsockopt returns optlen=1 and writes ONE byte (probed
+ *     on Win10 22H2; this is real Windows behaviour, not a wine gap). optlen 0
+ *     fails with WSAEFAULT.
+ *   - SO_KEEPALIVE: the same BOOLEAN contract (optlen 1).
  *   - SO_REUSEADDR set to 1 reads back 1 (read-back only; no port-stealing
  *     semantics are tested, because curl does not set it on Windows).
  *   - SO_TYPE reads back SOCK_STREAM.
@@ -81,11 +84,21 @@ static int get_int_opt_len(SOCKET s, int level, int opt, int *out, int *outlen)
     return 0;
 }
 
-/* Reads a socket option as int; returns 0 on success, -1 on failure. */
-static int get_int_opt(SOCKET s, int level, int opt, int *out)
+/* Reads a BOOLEAN option: Windows reports optlen 1 and writes only the low byte. */
+static int get_bool_opt(SOCKET s, int level, int opt, int expect, const char *what)
 {
-    int len = 0;
-    return get_int_opt_len(s, level, opt, out, &len);
+    int v = -1;
+    int len = (int)sizeof(v);
+    if (getsockopt(s, level, opt, (char *)&v, &len) == SOCKET_ERROR) {
+        printf("FAIL %s: %s: getsockopt error %d\n", TEST_NAME, what, WSAGetLastError());
+        return 1;
+    }
+    if (len != 1 || (v & 0xff) != expect || ((unsigned)v >> 8) != 0xffffffu) {
+        printf("FAIL %s: %s: optlen=%d value=0x%08x, expected optlen 1 and low byte %d with the rest of the "
+               "buffer untouched\n", TEST_NAME, what, len, (unsigned)v, expect);
+        return 1;
+    }
+    return 0;
 }
 
 static int set_int_opt(SOCKET s, int level, int opt, int value)
@@ -100,7 +113,6 @@ static int body(void)
     struct sockaddr_in sa;
     int val = 0;
     int optlen = 0;
-    int nodelay_short = 0;
     int ret = 1;
 
     listener = make_listener(&port);
@@ -128,72 +140,100 @@ static int body(void)
         goto out;
     }
 
-    /* TCP_NODELAY on and off. */
+    /* TCP_NODELAY and SO_KEEPALIVE are BOOLEAN options on Windows: getsockopt
+       reports optlen=1 and writes one byte (probed on Win10 22H2, with a 4 byte
+       and a 1 byte buffer; a 0 byte buffer fails with WSAEFAULT). The set side
+       accepts any non-zero int and normalises it to 1. */
     if (set_int_opt(client, IPPROTO_TCP, TCP_NODELAY, 1) == SOCKET_ERROR) {
         fail_wsa("setsockopt(TCP_NODELAY, 1)");
         goto out;
     }
-    if (get_int_opt_len(client, IPPROTO_TCP, TCP_NODELAY, &val, &optlen) != 0) {
-        fail_wsa("getsockopt(TCP_NODELAY)");
+    if (get_bool_opt(client, IPPROTO_TCP, TCP_NODELAY, 1, "TCP_NODELAY after 1"))
         goto out;
-    }
-    if (optlen != (int)sizeof(int)) {
-        /* Wine writes only one byte here (optlen=1); the value is not meaningful. */
-        nodelay_short = optlen;
-    } else if (val == 0) {
-        printf("FAIL %s: TCP_NODELAY read back 0 after setting 1\n", TEST_NAME);
-        goto out;
-    }
     if (set_int_opt(client, IPPROTO_TCP, TCP_NODELAY, 0) == SOCKET_ERROR) {
         fail_wsa("setsockopt(TCP_NODELAY, 0)");
         goto out;
     }
-    if (get_int_opt_len(client, IPPROTO_TCP, TCP_NODELAY, &val, &optlen) != 0) {
-        fail_wsa("getsockopt(TCP_NODELAY) after 0");
+    if (get_bool_opt(client, IPPROTO_TCP, TCP_NODELAY, 0, "TCP_NODELAY after 0"))
+        goto out;
+    if (set_int_opt(client, IPPROTO_TCP, TCP_NODELAY, 5) == SOCKET_ERROR) {
+        fail_wsa("setsockopt(TCP_NODELAY, 5)");
         goto out;
     }
-    if (optlen != (int)sizeof(int)) {
-        nodelay_short = optlen;
-    } else if (val != 0) {
-        printf("FAIL %s: TCP_NODELAY read back %d after setting 0\n", TEST_NAME, val);
+    if (get_bool_opt(client, IPPROTO_TCP, TCP_NODELAY, 1, "TCP_NODELAY after 5 (normalised)"))
         goto out;
-    }
-    if (set_int_opt(client, IPPROTO_TCP, TCP_NODELAY, 1) == SOCKET_ERROR) {
-        fail_wsa("setsockopt(TCP_NODELAY, 1) for curl default");
-        goto out;
+    {
+        /* curl passes an int; a zero length is rejected, a 1 byte char works. */
+        char one = 1;
+        if (setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, 1) == SOCKET_ERROR) {
+            fail_wsa("setsockopt(TCP_NODELAY, char 1)");
+            goto out;
+        }
+        if (setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, 0) != SOCKET_ERROR ||
+            WSAGetLastError() != WSAEFAULT) {
+            printf("FAIL %s: setsockopt(TCP_NODELAY, optlen 0) error=%d, expected WSAEFAULT (10014)\n",
+                   TEST_NAME, WSAGetLastError());
+            goto out;
+        }
+        val = 0;
+        optlen = 0;
+        if (getsockopt(client, IPPROTO_TCP, TCP_NODELAY, (char *)&val, &optlen) != SOCKET_ERROR ||
+            WSAGetLastError() != WSAEFAULT) {
+            printf("FAIL %s: getsockopt(TCP_NODELAY, optlen 0) error=%d, expected WSAEFAULT (10014)\n",
+                   TEST_NAME, WSAGetLastError());
+            goto out;
+        }
     }
 
-    /* SO_KEEPALIVE on and off. */
+    /* SO_KEEPALIVE on and off (also a BOOLEAN: optlen 1). */
     if (set_int_opt(client, SOL_SOCKET, SO_KEEPALIVE, 1) == SOCKET_ERROR) {
         fail_wsa("setsockopt(SO_KEEPALIVE, 1)");
         goto out;
     }
-    if (get_int_opt(client, SOL_SOCKET, SO_KEEPALIVE, &val) != 0 || val == 0) {
-        printf("FAIL %s: SO_KEEPALIVE read back %d after setting 1\n", TEST_NAME, val);
+    if (get_bool_opt(client, SOL_SOCKET, SO_KEEPALIVE, 1, "SO_KEEPALIVE after 1"))
         goto out;
-    }
     if (set_int_opt(client, SOL_SOCKET, SO_KEEPALIVE, 0) == SOCKET_ERROR) {
         fail_wsa("setsockopt(SO_KEEPALIVE, 0)");
         goto out;
     }
-    if (get_int_opt(client, SOL_SOCKET, SO_KEEPALIVE, &val) != 0 || val != 0) {
-        printf("FAIL %s: SO_KEEPALIVE read back %d after setting 0\n", TEST_NAME, val);
+    if (get_bool_opt(client, SOL_SOCKET, SO_KEEPALIVE, 0, "SO_KEEPALIVE after 0"))
         goto out;
-    }
 
     /* SO_REUSEADDR read-back on the listener. */
     if (set_int_opt(listener, SOL_SOCKET, SO_REUSEADDR, 1) == SOCKET_ERROR) {
         fail_wsa("setsockopt(SO_REUSEADDR, 1)");
         goto out;
     }
-    if (get_int_opt(listener, SOL_SOCKET, SO_REUSEADDR, &val) != 0 || val == 0) {
-        printf("FAIL %s: SO_REUSEADDR read back %d after setting 1\n", TEST_NAME, val);
+    if (get_int_opt_len(listener, SOL_SOCKET, SO_REUSEADDR, &val, &optlen) != 0 || val != 1 ||
+        optlen != (int)sizeof(int)) {
+        printf("FAIL %s: SO_REUSEADDR read back %d optlen=%d after setting 1, expected 1 / 4\n",
+               TEST_NAME, val, optlen);
         goto out;
     }
 
     /* SO_TYPE identifies the socket type. */
-    if (get_int_opt(client, SOL_SOCKET, SO_TYPE, &val) != 0 || val != SOCK_STREAM) {
-        printf("FAIL %s: SO_TYPE=%d, expected SOCK_STREAM (%d)\n", TEST_NAME, val, SOCK_STREAM);
+    if (get_int_opt_len(client, SOL_SOCKET, SO_TYPE, &val, &optlen) != 0 || val != SOCK_STREAM ||
+        optlen != (int)sizeof(int)) {
+        printf("FAIL %s: SO_TYPE=%d optlen=%d, expected SOCK_STREAM (%d) / 4\n", TEST_NAME, val, optlen,
+               SOCK_STREAM);
+        goto out;
+    }
+    /* A 1 byte buffer is too small for an int option: WSAEFAULT. */
+    {
+        char tiny = 0;
+        optlen = 1;
+        if (getsockopt(client, SOL_SOCKET, SO_TYPE, &tiny, &optlen) != SOCKET_ERROR ||
+            WSAGetLastError() != WSAEFAULT) {
+            printf("FAIL %s: getsockopt(SO_TYPE, optlen 1) error=%d, expected WSAEFAULT (10014)\n", TEST_NAME,
+                   WSAGetLastError());
+            goto out;
+        }
+    }
+    /* SO_BROADCAST is not supported on a TCP socket: WSAENOPROTOOPT. */
+    if (set_int_opt(client, SOL_SOCKET, SO_BROADCAST, 1) != SOCKET_ERROR ||
+        WSAGetLastError() != WSAENOPROTOOPT) {
+        printf("FAIL %s: SO_BROADCAST on TCP error=%d, expected WSAENOPROTOOPT (10042)\n", TEST_NAME,
+               WSAGetLastError());
         goto out;
     }
 
@@ -205,15 +245,6 @@ static int body(void)
     if (WSAGetLastError() != WSAENOPROTOOPT) {
         printf("FAIL %s: unknown option error=%d, expected WSAENOPROTOOPT (10042)\n",
                TEST_NAME, WSAGetLastError());
-        goto out;
-    }
-
-    if (nodelay_short) {
-        printf("SKIP %s: wine gap: getsockopt(IPPROTO_TCP, TCP_NODELAY) reports optlen=%d "
-               "instead of %d (wine writes a single byte); TCP_NODELAY read-back not verified, "
-               "all other checks passed\n",
-               TEST_NAME, nodelay_short, (int)sizeof(int));
-        ret = 77;
         goto out;
     }
 

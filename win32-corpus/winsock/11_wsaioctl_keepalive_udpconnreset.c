@@ -14,9 +14,11 @@
  *   - Effect with TRUE: the same datagram makes the next recvfrom fail with
  *     WSAECONNRESET (10054).
  *   - getsockopt(SO_KEEPALIVE) reads are made with a freshly sized optlen each time.
- *   - SKIP when the driver/wine reports WSAEOPNOTSUPP (10045) for either code.
- *   - SKIP under wine only when the TRUE effect check sees no WSAECONNRESET
- *     (wine does not deliver the loopback ICMP). On Windows the same miss is FAIL.
+ *   - Win10 22H2 accepts both codes (real Windows PASS, probed in std and adm);
+ *     a WSAEOPNOTSUPP (10045) reply to either code is still a SKIP for
+ *     stacks without the control codes.
+ *   - A missing WSAECONNRESET with TRUE is a FAIL (the old wine SKIP path is
+ *     removed: wine did not deliver the loopback ICMP, Windows does).
  * Source: lib/cf-socket.c:248-270 (SIO_KEEPALIVE_VALS via WSAIoctl with
  *         struct tcp_keepalive, failure logged and tolerated).
  *         SIO_UDP_CONNRESET is not referenced anywhere in lib/ in this tree;
@@ -140,13 +142,6 @@ static int udp_icmp_probe(SOCKET u, unsigned short target, int *err_out)
     return -1;   /* nothing was sent to us, so any data is unexpected */
 }
 
-/* True when running under Wine (ntdll exports wine_get_version). */
-static int running_under_wine(void)
-{
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    return ntdll != NULL && GetProcAddress(ntdll, "wine_get_version") != NULL;
-}
-
 static int body(void)
 {
     SOCKET listener = INVALID_SOCKET, client = INVALID_SOCKET, conn = INVALID_SOCKET;
@@ -262,12 +257,6 @@ static int body(void)
         goto out;
     }
     probe = udp_icmp_probe(udp, closed_port, &probe_err);
-    if (probe == 0 && running_under_wine()) {
-        /* Wine does not deliver loopback ICMP port-unreachable to UDP sockets. */
-        printf("SKIP %s: wine does not report UDP ICMP port-unreachable as WSAECONNRESET\n", TEST_NAME);
-        ret = 77;
-        goto out;
-    }
     if (probe != 1 || probe_err != WSAECONNRESET) {
         printf("FAIL %s: with SIO_UDP_CONNRESET TRUE, probe=%d err=%d, expected WSAECONNRESET (10054)\n",
                TEST_NAME, probe, probe_err);
