@@ -17,7 +17,8 @@
  *   - ntdll resolves and exports NtCreateFile and NtClose.
  *   - NtCreateFile(\Device\Afd\Tc14Probe, SYNCHRONIZE, FILE_OPEN) returns
  *     STATUS_SUCCESS (0) and a non-NULL handle, and IO_STATUS_BLOCK.Information
- *     is FILE_OPENED (1) or FILE_CREATED (2).
+ *     is 0 (FILE_SUPERSEDED): a device open reports 0 for every disposition on
+ *     Win10 22H2 build 19045 (FILE_OPENED/FILE_CREATED are file-system conventions).
  *   - NtClose(handle) returns STATUS_SUCCESS.
  *   - If the device is absent (STATUS_OBJECT_NAME_NOT_FOUND, STATUS_NO_SUCH_DEVICE
  *     or STATUS_OBJECT_PATH_NOT_FOUND) the test SKIPs; any other status is FAIL.
@@ -50,8 +51,7 @@
 #define TC_STATUS_OBJECT_NAME_NOT_FOUND ((LONG)0xC0000034UL)
 #define TC_STATUS_OBJECT_PATH_NOT_FOUND ((LONG)0xC000003AUL)
 #define TC_STATUS_NO_SUCH_DEVICE ((LONG)0xC000000EUL)
-#define TC_FILE_OPENED 1UL
-#define TC_FILE_CREATED 2UL
+#define TC_FILE_SUPERSEDED 0UL
 #define TC_FILE_OPEN 1UL
 #define TC_OBJ_CASE_INSENSITIVE 0x00000040UL
 #define TC_SYNCHRONIZE 0x00100000UL
@@ -108,8 +108,8 @@ int main(void)
     if (h == NULL)
         FAILF("NtCreateFile succeeded but returned NULL handle");
 
-    if (iosb.Information != TC_FILE_OPENED && iosb.Information != TC_FILE_CREATED)
-        FAILF("IO_STATUS_BLOCK.Information=%lu, expected FILE_OPENED or FILE_CREATED",
+    if (iosb.Information != TC_FILE_SUPERSEDED)
+        FAILF("IO_STATUS_BLOCK.Information=%lu, expected 0 (device open)",
               (unsigned long)iosb.Information);
 
     status = close_fn(h);

@@ -46,7 +46,6 @@ int main(void)
     wchar_t small[4];
     DWORD n, n2;
     size_t len;
-    int wine_nul_gap = 0;
 
     self_w = GetModuleHandleW(NULL);
     self_a = GetModuleHandleA(NULL);
@@ -71,9 +70,6 @@ int main(void)
      * reads what the call wrote, not stack garbage. */
     {
         size_t i;
-        HMODULE ntdll_probe = GetModuleHandleW(L"ntdll.dll");
-        int is_wine = ntdll_probe && GetProcAddress(ntdll_probe, "wine_get_version") != NULL;
-
         for (i = 0; i < 4; i++)
             small[i] = (wchar_t)0xFFFF;
         SetLastError(0);
@@ -83,14 +79,12 @@ int main(void)
         if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
             FAILF("truncated GetModuleFileNameW: expected ERROR_INSUFFICIENT_BUFFER(122) got %lu",
                   (unsigned long)GetLastError());
-        if (small[3] != L'\0') {
-            /* Windows documents truncation as nSize characters including the
-             * terminating NUL. Wine copies nSize characters and leaves
-             * small[3] unterminated, so only that case under wine is a SKIP. */
-            if (!is_wine)
-                FAILF("truncated buffer not NUL-terminated");
-            wine_nul_gap = 1;
-        }
+        /* Windows NUL-terminates the truncated result (verified on Win10 22H2;
+         * wine leaves it unterminated, a known wine gap). */
+        if (small[3] != L'\0')
+            FAILF("truncated buffer not NUL-terminated");
+        if (small[0] == 0xFFFF || wcslen(small) != 3)
+            FAILF("truncated buffer content wrong (len %lu)", (unsigned long)wcslen(small));
     }
 
     /* Missing module by name. */
@@ -108,10 +102,6 @@ int main(void)
     if (!GetProcAddress(ntdll, "RtlVerifyVersionInfo"))
         FAILF("ntdll!RtlVerifyVersionInfo not exported err=%lu", (unsigned long)GetLastError());
 
-    if (wine_nul_gap) {
-        printf("SKIP " NAME ": wine gap, GetModuleFileNameW truncation does not NUL-terminate the buffer (Windows does)\n");
-        return 77;
-    }
     printf("PASS " NAME "\n");
     return 0;
 }

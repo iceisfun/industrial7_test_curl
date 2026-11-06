@@ -15,7 +15,7 @@
  *   - LoadLibraryExW(L"tc_no_such_module_03.dll", ...) == NULL with
  *     GetLastError() == ERROR_MOD_NOT_FOUND (126).
  *   - LoadLibraryExW of an absolute path inside the system directory that does
- *     not exist == NULL with error ERROR_MOD_NOT_FOUND or ERROR_FILE_NOT_FOUND.
+ *     not exist == NULL with error ERROR_MOD_NOT_FOUND (126, the only value Win10 22H2 gives).
  *   - GetModuleHandleW of the missing name returns NULL and does not load it.
  *
  * Source reference: none in curl (curl links ws2_32/bcrypt/secur32 statically
@@ -93,8 +93,8 @@ int main(void)
         FAILF("absolute missing path unexpectedly loaded");
     }
     err = GetLastError();
-    if (err != ERROR_MOD_NOT_FOUND && err != ERROR_FILE_NOT_FOUND)
-        FAILF("absolute missing path: unexpected error %lu", (unsigned long)err);
+    if (err != ERROR_MOD_NOT_FOUND)
+        FAILF("absolute missing path: expected ERROR_MOD_NOT_FOUND(126) (probed on Win10 22H2), got %lu", (unsigned long)err);
 
     printf("PASS " NAME "\n");
     return 0;

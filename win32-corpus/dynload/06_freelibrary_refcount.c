@@ -5,7 +5,7 @@
  *   the same DLL return the same handle; one FreeLibrary must not invalidate
  *   the module while another reference is held; the function pointer obtained
  *   earlier must still be callable. FreeLibrary(NULL) must fail with
- *   ERROR_INVALID_HANDLE. LOAD_LIBRARY_AS_DATAFILE returns a non-executable
+ *   ERROR_MOD_NOT_FOUND (126; probed on Win10 22H2 build 19045). LOAD_LIBRARY_AS_DATAFILE returns a non-executable
  *   handle with the low bit set, and FreeLibrary releases it.
  *
  * APIs: LoadLibraryExW (LOAD_LIBRARY_SEARCH_SYSTEM32), LoadLibraryW,
@@ -16,7 +16,7 @@
  *   - After FreeLibrary(h1) (TRUE), GetProcAddress(h2, "GetFileVersionInfoSizeW")
  *     is still non-NULL and the function still runs (missing file -> 0).
  *   - FreeLibrary(h2) returns TRUE.
- *   - FreeLibrary(NULL) returns FALSE with ERROR_INVALID_HANDLE (6).
+ *   - FreeLibrary(NULL) returns FALSE with ERROR_MOD_NOT_FOUND (126).
  *   - LoadLibraryExW(L"version.dll", NULL, LOAD_LIBRARY_AS_DATAFILE) != NULL with
  *     ((uintptr_t)h & 1) == 1; FreeLibrary on it returns TRUE.
  *
@@ -83,8 +83,8 @@ int main(void)
     SetLastError(0);
     if (FreeLibrary(NULL))
         FAILF("FreeLibrary(NULL) unexpectedly returned TRUE");
-    if (GetLastError() != ERROR_INVALID_HANDLE)
-        FAILF("FreeLibrary(NULL): expected ERROR_INVALID_HANDLE(6) got %lu",
+    if (GetLastError() != ERROR_MOD_NOT_FOUND)
+        FAILF("FreeLibrary(NULL): expected ERROR_MOD_NOT_FOUND(126) got %lu",
               (unsigned long)GetLastError());
 
     /* Data-file load: not executable, low bit tagged. */

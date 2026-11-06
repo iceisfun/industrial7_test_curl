@@ -2,7 +2,8 @@
  * Test: 05_getprocaddress_missing_null
  *
  * Purpose: GetProcAddress returns NULL with ERROR_PROC_NOT_FOUND for a missing
- *   export, and for an out-of-range ordinal. LoadLibrary of a missing module
+ *   export; for an out-of-range ordinal it returns NULL with
+ *   ERROR_INVALID_ORDINAL (182) (probed on Win10 22H2 build 19045). LoadLibrary of a missing module
  *   returns NULL with ERROR_MOD_NOT_FOUND. Also covers the optional-feature
  *   fallback pattern: a probe for a newer export fails, and the caller falls
  *   back to an older export that exists.
@@ -12,7 +13,8 @@
  * Success:
  *   - GetProcAddress(kernel32, "TcNoSuchFunctionXyz05") == NULL and
  *     GetLastError() == 127 (ERROR_PROC_NOT_FOUND).
- *   - GetProcAddress(kernel32, MAKEINTRESOURCEA(65000)) == NULL, error 127.
+ *   - GetProcAddress(kernel32, MAKEINTRESOURCEA(65000)) == NULL, error 182
+ *     (ERROR_INVALID_ORDINAL).
  *   - LoadLibraryW(L"tc_no_such_module_05.dll") == NULL, error 126.
  *   - Fallback probe: GetProcAddress(kernel32, "GetSystemTimePreciseAsFileTime")
  *     is tried first; if it resolves it is called, otherwise GetSystemTimeAsFileTime
@@ -65,8 +67,8 @@ int main(void)
     p = GetProcAddress(k32, MAKEINTRESOURCEA(65000));
     if (p != NULL)
         FAILF("out-of-range ordinal resolved to %p", (void *)p);
-    if (GetLastError() != ERROR_PROC_NOT_FOUND)
-        FAILF("out-of-range ordinal: expected 127 got %lu", (unsigned long)GetLastError());
+    if (GetLastError() != ERROR_INVALID_ORDINAL)
+        FAILF("out-of-range ordinal: expected ERROR_INVALID_ORDINAL(182) got %lu", (unsigned long)GetLastError());
 
     SetLastError(0);
     if (LoadLibraryW(L"tc_no_such_module_05.dll") != NULL)
