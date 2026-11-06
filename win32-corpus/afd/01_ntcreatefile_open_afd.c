@@ -26,7 +26,7 @@
  *   path is reached through WSAEventSelect/WSAPoll in lib/multi.c:1389
  *   (WSAEventSelect on the socket handle), which AFD services underneath.
  *
- * Exit: 0 PASS, 77 SKIP (AFD cannot be opened, e.g. wine), 1 FAIL.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
@@ -131,15 +131,15 @@ int main(void)
     HANDLE bogus = NULL;
 
     if (!load_ntdll()) {
-        printf("SKIP %s: ntdll does not export NtCreateFile/NtClose\n", TEST_NAME);
-        return 77;
+        printf("FAIL %s: ntdll does not export NtCreateFile/NtClose\n", TEST_NAME);
+        return 1;
     }
 
     st = open_device(L"\\Device\\Afd", &a);
     if (st < 0 || a == NULL) {
-        printf("SKIP %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st);
-        return 77;
+        return 1;
     }
 
     st = open_device(L"\\Device\\Afd", &b);

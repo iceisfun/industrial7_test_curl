@@ -5,8 +5,8 @@
  *   Resolve ntdll!RtlNtStatusToDosError with GetProcAddress and verify the
  *   NTSTATUS -> Win32 error mapping that curl's error paths depend on when an
  *   AFD or NT I/O call fails (the NTSTATUS from NtDeviceIoControlFile is
- *   converted to a Win32 error for logging). AFD must be openable first,
- *   otherwise the test SKIPs.
+ *   converted to a Win32 error for logging). AFD must be openable first
+ *   (it is on Win10 22H2 for a standard user), otherwise the test FAILs.
  *
  * APIs used:
  *   ntdll!NtCreateFile, ntdll!NtClose, ntdll!RtlNtStatusToDosError
@@ -26,7 +26,7 @@
  *   reading the Win32 code, so this mapping is not on that path; it is a
  *   building block for AFD error reporting only.
  *
- * Exit: 0 PASS, 77 SKIP (AFD or ntdll exports missing), 1 FAIL.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
@@ -139,14 +139,14 @@ int main(void)
     T_NTSTATUS st;
 
     if (!load_ntdll()) {
-        printf("SKIP %s: ntdll does not export required Nt/Rtl functions\n", TEST_NAME);
-        return 77;
+        printf("FAIL %s: ntdll does not export required Nt/Rtl functions\n", TEST_NAME);
+        return 1;
     }
     st = open_afd(&afd);
     if (st < 0 || afd == NULL) {
-        printf("SKIP %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st);
-        return 77;
+        return 1;
     }
     p_NtClose(afd);
 

@@ -28,7 +28,7 @@
  *   when the socket becomes readable; this test checks the same
  *   event-on-readiness contract at the AFD level.
  *
- * Exit: 0 PASS, 77 SKIP (AFD cannot be opened), 1 FAIL.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
@@ -204,15 +204,15 @@ int main(void)
     DWORD w;
 
     if (!load_ntdll()) {
-        printf("SKIP %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
+        printf("FAIL %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
                TEST_NAME);
-        return 77;
+        return 1;
     }
     st = open_afd(&afd);
     if (st < 0 || afd == NULL) {
-        printf("SKIP %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st);
-        return 77;
+        return 1;
     }
     if (!wsa_start() || !loopback_pair(&c, &s) || !info || !iosb) {
         printf("FAIL %s: setup failed (WSA %d)\n", TEST_NAME, WSAGetLastError());

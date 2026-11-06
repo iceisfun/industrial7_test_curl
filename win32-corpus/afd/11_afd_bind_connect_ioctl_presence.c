@@ -10,8 +10,7 @@
  *   STATUS_NOT_IMPLEMENTED, which would mean
  *   the code is not dispatched at all. Because the structures are undocumented,
  *   we do not attempt a real bind/connect here: we only test presence.
- *   If an implementation (for example wine) does not dispatch these codes, the
- *   test SKIPs rather than fails.
+ *   Win10 22H2 dispatches both, so a non-dispatched code is a FAIL.
  *
  * APIs used:
  *   ntdll!NtCreateFile, NtDeviceIoControlFile, NtClose (GetProcAddress),
@@ -28,7 +27,7 @@
  *   creates; connect() is issued by the same socket setup. The AFD-level
  *   IOCTLs are what ws2_32 issues underneath those calls.
  *
- * Exit: 0 PASS, 77 SKIP (AFD cannot be opened or codes not dispatched), 1 FAIL.
+ * Exit: 0 PASS, 1 FAIL (every API used exists on Win10 22H2: no SKIP).
  */
 #ifndef UNICODE
 #define UNICODE
@@ -167,15 +166,15 @@ int main(void)
     unsigned char zero[8];
 
     if (!load_ntdll()) {
-        printf("SKIP %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
+        printf("FAIL %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
                TEST_NAME);
-        return 77;
+        return 1;
     }
     st = open_afd(&afd);
     if (st < 0 || afd == NULL) {
-        printf("SKIP %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st);
-        return 77;
+        return 1;
     }
 
     memset(zero, 0, sizeof(zero));
@@ -191,16 +190,16 @@ int main(void)
     }
 
     if (st_bind == T_STATUS_INVALID_DEVICE_REQUEST || st_bind == T_STATUS_NOT_IMPLEMENTED) {
-        printf("SKIP %s: IOCTL_AFD_BIND not dispatched by this AFD (0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: IOCTL_AFD_BIND not dispatched by this AFD (0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st_bind);
         p_NtClose(afd);
-        return 77;
+        return 1;
     }
     if (st_connect == T_STATUS_INVALID_DEVICE_REQUEST || st_connect == T_STATUS_NOT_IMPLEMENTED) {
-        printf("SKIP %s: IOCTL_AFD_CONNECT not dispatched by this AFD (0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: IOCTL_AFD_CONNECT not dispatched by this AFD (0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st_connect);
         p_NtClose(afd);
-        return 77;
+        return 1;
     }
 
     /* Negative control: an unknown function code must not succeed. */

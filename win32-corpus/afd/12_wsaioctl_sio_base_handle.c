@@ -9,9 +9,8 @@
  *     - a closed socket is rejected with WSAENOTSOCK,
  *     - the base handle is directly usable with IOCTL_AFD_POLL: the idle
  *       connected socket must report AFD_POLL_WRITE through it.
- *   The IOCTL_AFD_POLL path needs an AFD handle, so the test SKIPs if
- *   \Device\Afd cannot be opened. If WSAIoctl rejects SIO_BASE_HANDLE as
- *   unsupported (for example in wine), the test SKIPs.
+ *   Win10 22H2 opens \Device\Afd for a standard user and supports
+ *   SIO_BASE_HANDLE, so any failure there is a FAIL.
  *
  * APIs used:
  *   ws2_32!WSAIoctl with SIO_BASE_HANDLE (_WSAIOR(IOC_WS2,34)), socket/
@@ -28,7 +27,7 @@
  *   shows curl's existing WSAIoctl usage on the connected socket; the same
  *   call shape is used here with SIO_BASE_HANDLE.
  *
- * Exit: 0 PASS, 77 SKIP (AFD or SIO_BASE_HANDLE unavailable), 1 FAIL.
+ * Exit: 0 PASS, 1 FAIL.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -188,12 +187,6 @@ static T_NTSTATUS afd_poll(HANDLE afd, const SOCKET *socks, const ULONG *events,
     return st;
 }
 
-static int running_under_wine(void)
-{
-    HMODULE h = GetModuleHandleW(L"ntdll.dll");
-    return h != NULL && GetProcAddress(h, "wine_get_version") != NULL;
-}
-
 static int wsa_start(void)
 {
     WSADATA d;
@@ -254,15 +247,15 @@ int main(void)
     int err;
 
     if (!load_ntdll()) {
-        printf("SKIP %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
+        printf("FAIL %s: ntdll does not export NtCreateFile/NtClose/NtDeviceIoControlFile\n",
                TEST_NAME);
-        return 77;
+        return 1;
     }
     st = open_afd(&afd);
     if (st < 0 || afd == NULL) {
-        printf("SKIP %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
+        printf("FAIL %s: cannot open \\Device\\Afd (NTSTATUS 0x%08lX)\n", TEST_NAME,
                (unsigned long)(ULONG)st);
-        return 77;
+        return 1;
     }
     if (!wsa_start() || !loopback_pair(&c, &s)) {
         printf("FAIL %s: socket setup failed (WSA %d)\n", TEST_NAME, WSAGetLastError());
@@ -272,10 +265,6 @@ int main(void)
     rc = WSAIoctl(c, SIO_BASE_HANDLE, NULL, 0, &base, sizeof(base), &bytes, NULL, NULL);
     if (rc != 0) {
         err = WSAGetLastError();
-        if (err == WSAEOPNOTSUPP || err == WSAEINVAL || err == WSAENOPROTOOPT) {
-            printf("SKIP %s: SIO_BASE_HANDLE not supported here (WSA %d)\n", TEST_NAME, err);
-            return 77;
-        }
         printf("FAIL %s: WSAIoctl(SIO_BASE_HANDLE) failed (WSA %d)\n", TEST_NAME, err);
         return 1;
     }
@@ -296,14 +285,6 @@ int main(void)
     rc = WSAIoctl(dead, SIO_BASE_HANDLE, NULL, 0, &base, sizeof(base), &bytes, NULL, NULL);
     err = WSAGetLastError();
     if (rc != SOCKET_ERROR || err != WSAENOTSOCK) {
-        if (rc == 0 && running_under_wine()) {
-            /* Wine's SIO_BASE_HANDLE echoes the handle without validating it
-             * (it also succeeds for a bogus handle), unlike FIONBIO/other ioctls
-             * which return WSAENOTSOCK. Real Windows rejects closed sockets. */
-            printf("SKIP %s: wine gap: SIO_BASE_HANDLE does not validate closed sockets "
-                   "(WSAIoctl returned success, Windows gives WSAENOTSOCK)\n", TEST_NAME);
-            return 77;
-        }
         printf("FAIL %s: WSAIoctl on closed socket returned %d (WSA %d), expected WSAENOTSOCK\n",
                TEST_NAME, rc, err);
         return 1;
