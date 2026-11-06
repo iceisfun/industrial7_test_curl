@@ -17,10 +17,9 @@
  *   Phase A: no event before the peer closes; after closesocket on the
  *     peer the event is signaled within 2 s; FD_CLOSE is reported with
  *     iErrorCode 0; recv on the server socket returns 0 (EOF).
- *   Phase B: FD_CLOSE is reported with iErrorCode WSAECONNRESET (Windows) or
- *     WSAECONNABORTED (wine reports this for the same peer RST); a clean
- *     iErrorCode of 0 is a failure. recv then returns SOCKET_ERROR with one
- *     of those two errors, never a silent 0-byte EOF.
+ *   Phase B: FD_CLOSE is reported with iErrorCode WSAECONNABORTED (10053,
+ *     probed on Win10 22H2); recv then returns SOCKET_ERROR with
+ *     WSAECONNRESET (10054), never a silent 0-byte EOF.
  *
  * Source: curl lib/multi.c:1385-1389 (POLLIN maps FD_CLOSE into the mask so
  *   a peer close wakes curl_multi_poll), lib/multi.c:1424-1426 (FD_CLOSE is
@@ -187,18 +186,17 @@ static int body(char *msg, size_t msz)
   CHECK(WSAEnumNetworkEvents(srv, ev, &ne) == 0,
         "WSAEnumNetworkEvents(B) failed: %d", WSAGetLastError());
   CHECK(ne.lNetworkEvents & FD_CLOSE, "RST: lacks FD_CLOSE");
-  /* An abortive close is never a clean EOF. Windows is expected to report
-     WSAECONNRESET here; wine reports WSAECONNABORTED for the same peer RST,
-     and both are accepted. Anything else (including 0) is a failure. */
+  /* An abortive close is never a clean EOF. Probed on Win10 22H2
+     (20 runs, std and adm identical): the FD_CLOSE event carries
+     WSAECONNABORTED while the following recv() fails with WSAECONNRESET. */
   e = ne.iErrorCode[FD_CLOSE_BIT];
-  CHECK(e == WSAECONNRESET || e == WSAECONNABORTED,
-        "RST: FD_CLOSE iErrorCode=%d, expected WSAECONNRESET (%d) or "
-        "WSAECONNABORTED (%d)", e, WSAECONNRESET, WSAECONNABORTED);
+  CHECK(e == WSAECONNABORTED,
+        "RST: FD_CLOSE iErrorCode=%d, expected WSAECONNABORTED (%d)",
+        e, WSAECONNABORTED);
 
   n = recv(srv, buf, sizeof(buf), 0);
-  CHECK(n == SOCKET_ERROR && (WSAGetLastError() == WSAECONNRESET ||
-                              WSAGetLastError() == WSAECONNABORTED),
-        "recv after RST: expected SOCKET_ERROR with a reset/abort error, "
+  CHECK(n == SOCKET_ERROR && WSAGetLastError() == WSAECONNRESET,
+        "recv after RST: expected SOCKET_ERROR with WSAECONNRESET, "
         "got n=%d err=%d", n, WSAGetLastError());
 
 done:
