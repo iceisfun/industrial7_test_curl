@@ -11,9 +11,16 @@
  *   curl ignores the result, so this test checks the return value directly.
  *   The 0xFE variant is only exercised on 10.0.16299 and later, matching
  *   curl; the 1-retransmission variant runs everywhere.
- * Success: the WSAIoctl call(s) return 0 on a connected loopback TCP socket.
- * SKIP: the ioctl is not implemented by this Winsock (WSAEOPNOTSUPP), for
- *   example under wine. Any other error is a FAIL.
+ * Success (probed on Windows 10 22H2, 19045):
+ *   - on an UNCONNECTED TCP socket (curl's order: before connect) the ioctl
+ *     returns 0 for the 0xFE, 1 and 2 retransmission variants;
+ *   - on a CONNECTED socket it fails with WSAEINVAL (10022); curl ignores
+ *     the result, but the call has no effect there;
+ *   - the version gate is evaluated with RtlVerifyVersionInfo, as curl does
+ *     (VerifyVersionInfoW lies without a manifest: build 19045 compares as
+ *     lower than 16299).
+ * SKIP: only under wine when the ioctl is not implemented (WSAEOPNOTSUPP).
+ *   On real Windows WSAEOPNOTSUPP is a FAIL.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -115,15 +122,24 @@ static int set_rto(SOCKET s, UCHAR max_syn, const char *label)
   return -1;
 }
 
-/* Mirrors curlx_verify_windows_version(10, 0, 16299, ..., GREATER_EQUAL)
-   from cf-socket.c:1241. VerifyVersionInfoW is in kernel32, so it is linked
-   directly. Returns non-zero when the OS is 10.0.16299 or later. */
+typedef LONG (NTAPI *rtlverify_fn)(OSVERSIONINFOEXW *, ULONG, ULONGLONG);
+
+static int is_wine(void)
+{
+  HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+  return nt && GetProcAddress(nt, "wine_get_version") != NULL;
+}
+
+/* Mirrors curlx_verify_windows_version(10, 0, 16299, ..., GREATER_EQUAL).
+   RtlVerifyVersionInfo gives the real version regardless of manifest. */
 static int os_is_1709_or_later(void)
 {
   OSVERSIONINFOEXW info;
-  DWORDLONG cond = 0;
-  DWORD mask = VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER;
-
+  ULONGLONG cond = 0;
+  rtlverify_fn fn = (rtlverify_fn)(void *)GetProcAddress(
+    GetModuleHandleW(L"ntdll.dll"), "RtlVerifyVersionInfo");
+  if(!fn)
+    return 0;
   memset(&info, 0, sizeof(info));
   info.dwOSVersionInfoSize = sizeof(info);
   info.dwMajorVersion = 10;
@@ -132,15 +148,24 @@ static int os_is_1709_or_later(void)
   cond = VerSetConditionMask(cond, VER_MAJORVERSION, VER_GREATER_EQUAL);
   cond = VerSetConditionMask(cond, VER_MINORVERSION, VER_GREATER_EQUAL);
   cond = VerSetConditionMask(cond, VER_BUILDNUMBER, VER_GREATER_EQUAL);
-  return VerifyVersionInfoW(&info, mask, cond) ? 1 : 0;
+  return fn(&info, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER,
+            cond) == 0;
+}
+
+static SOCKET new_tcp(void)
+{
+  return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 }
 
 int main(void)
 {
   WSADATA wsa;
-  SOCKET server = INVALID_SOCKET, client;
+  SOCKET server = INVALID_SOCKET, client, fresh;
   int err = 0;
   int rc;
+  static const UCHAR variants[] = { TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS,
+                                    1, 2 };
+  size_t i;
 
   rc = WSAStartup(MAKEWORD(2, 2), &wsa);
   if(rc) {
@@ -148,6 +173,32 @@ int main(void)
     return 1;
   }
 
+  /* 1. curl's order: set it on a fresh, unconnected socket */
+  for(i = 0; i < sizeof(variants); i++) {
+    if(variants[i] == TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS &&
+       !os_is_1709_or_later())
+      continue;
+    fresh = new_tcp();
+    if(fresh == INVALID_SOCKET) {
+      printf("FAIL %s: socket() failed, WSAGetLastError=%d\n", TEST_NAME,
+             WSAGetLastError());
+      return 1;
+    }
+    rc = set_rto(fresh, variants[i], "unconnected");
+    closesocket(fresh);
+    if(rc == 77 && is_wine()) {
+      printf("SKIP %s: wine does not implement SIO_TCP_INITIAL_RTO\n",
+             TEST_NAME);
+      WSACleanup();
+      return 77;
+    }
+    if(rc != 0) {
+      WSACleanup();
+      return 1;
+    }
+  }
+
+  /* 2. connected socket: rejected with WSAEINVAL */
   client = make_tcp_pair(&server, &err);
   if(client == INVALID_SOCKET) {
     printf("FAIL %s: loopback pair setup failed, WSAGetLastError=%d\n",
@@ -155,36 +206,23 @@ int main(void)
     WSACleanup();
     return 1;
   }
-
-  /* Windows 10 1709+ variant: zero SYN retransmissions (only on 1709+,
-     as curl does; older systems reject it) */
-  if(os_is_1709_or_later()) {
-    rc = set_rto(client, TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS, "no-syn-retx");
-    if(rc != 0) {
-      closesocket(client);
-      closesocket(server);
-      WSACleanup();
-      if(rc == 77) {
-        printf("SKIP %s: SIO_TCP_INITIAL_RTO not supported by this Winsock\n",
-               TEST_NAME);
-        return 77;
-      }
-      return 1;
-    }
+  {
+    curl_test_rto_params rto;
+    DWORD bytes = 0;
+    memset(&rto, 0, sizeof(rto));
+    rto.MaxSynRetransmissions = 1;
+    rc = WSAIoctl(client, SIO_TCP_INITIAL_RTO, &rto, (DWORD)sizeof(rto),
+                  NULL, 0, &bytes, NULL, NULL);
+    err = WSAGetLastError();
   }
-
-  /* Pre-1709 variant: one SYN retransmission, valid on every version */
-  rc = set_rto(client, 1, "one-syn-retx");
   closesocket(client);
   closesocket(server);
   WSACleanup();
-  if(rc == 77) {
-    printf("SKIP %s: SIO_TCP_INITIAL_RTO not supported by this Winsock\n",
-           TEST_NAME);
-    return 77;
-  }
-  if(rc != 0)
+  if(rc == 0 || err != WSAEINVAL) {
+    printf("FAIL %s: connected socket rc=%d WSAGetLastError=%d, expected "
+           "SOCKET_ERROR/WSAEINVAL (10022)\n", TEST_NAME, rc, err);
     return 1;
+  }
 
   printf("PASS %s\n", TEST_NAME);
   return 0;

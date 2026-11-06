@@ -11,7 +11,7 @@
  * Success: the call returns STATUS_SUCCESS (0) for 32 and 1024 byte buffers;
  *   the output is not all zero; two successive 32 byte draws differ; and a
  *   call with no algorithm handle and without the system-preferred flag is
- *   rejected with a non-success NTSTATUS.
+ *   rejected with STATUS_INVALID_HANDLE (0xC0000008, probed on Windows 10).
  * Linking: BCryptGenRandom is exported by bcrypt.lib (the -lbcrypt import
  *   library), so it is linked directly rather than resolved with
  *   LoadLibrary. The test has no SKIP path; a missing export is a link error.
@@ -90,9 +90,9 @@ int main(void)
   /* Failure path: without an algorithm handle and without the
      system-preferred flag the call must not report success */
   st = BCryptGenRandom(NULL, a, (ULONG)sizeof(a), 0);
-  if(st == STATUS_SUCCESS) {
-    printf("FAIL %s: BCryptGenRandom with no algorithm and no flag succeeded\n",
-           TEST_NAME);
+  printf("INFO no-handle/no-flag status=0x%08lx\n", (unsigned long)st);
+  if(st != (NTSTATUS)0xC0000008L) { /* STATUS_INVALID_HANDLE, probed on Win10 */
+    printf("FAIL %s: BCryptGenRandom with no algorithm and no flag returned 0x%08lx, expected 0xC0000008 (STATUS_INVALID_HANDLE)\n", TEST_NAME, (unsigned long)st);
     return 1;
   }
 

@@ -10,7 +10,8 @@
  *   times in milliseconds) and calls WSAIoctl with no output buffer.
  * Success: WSAIoctl returns 0 and the socket reports SO_KEEPALIVE != 0 after
  *   the call, proving that onoff=1 took effect.
- * SKIP: WSAIoctl reports WSAEOPNOTSUPP (wine without the ioctl).
+ * SKIP: only under wine when WSAIoctl reports WSAEOPNOTSUPP; on real
+ *   Windows that error is a FAIL.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -43,6 +44,12 @@ struct curl_test_tcp_keepalive {
 
 /* Loopback TCP pair: returns the connected client, *accepted is the server
    side. On failure returns INVALID_SOCKET and sets *err. */
+static int is_wine(void)
+{
+  HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+  return nt && GetProcAddress(nt, "wine_get_version") != NULL;
+}
+
 static SOCKET make_tcp_pair(SOCKET *accepted, int *err)
 {
   struct sockaddr_in sa;
@@ -126,7 +133,7 @@ int main(void)
     closesocket(client);
     closesocket(server);
     WSACleanup();
-    if(werr == WSAEOPNOTSUPP) {
+    if(werr == WSAEOPNOTSUPP && is_wine()) {
       printf("SKIP %s: SIO_KEEPALIVE_VALS not supported (WSAEOPNOTSUPP)\n",
              TEST_NAME);
       return 77;

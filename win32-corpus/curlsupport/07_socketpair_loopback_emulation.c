@@ -14,12 +14,12 @@
  *   The non-blocking switch is applied to both ends.
  * Success: the exclusive option is accepted; a second socket with
  *   SO_REUSEADDR cannot bind the same loopback port while the listener holds
- *   it (WSAEACCES on Windows, WSAEADDRINUSE also accepted; this is why curl
+ *   it (always WSAEACCES 10013 on Windows 10 22H2; this is why curl
  *   avoids SO_REUSEADDR here);
  *   after pairing, a byte written on one end is read on the other, and an
  *   empty non-blocking read returns WSAEWOULDBLOCK.
- * SKIP: SO_EXCLUSIVEADDRUSE is not implemented (WSAENOPROTOOPT), for
- *   example under wine.
+ * SKIP: only under wine when SO_EXCLUSIVEADDRUSE is not implemented
+ *   (WSAENOPROTOOPT); on real Windows that is a FAIL.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -42,6 +42,12 @@
 #ifndef SO_EXCLUSIVEADDRUSE
 #define SO_EXCLUSIVEADDRUSE ((int)(~SO_REUSEADDR))
 #endif
+
+static int is_wine(void)
+{
+  HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+  return nt && GetProcAddress(nt, "wine_get_version") != NULL;
+}
 
 /* Returns 0 on success. On failure *err holds WSAGetLastError() and
    *skip is set when the exclusive option is unsupported. */
@@ -72,7 +78,7 @@ static int emulate_socketpair(SOCKET socks[2], int *err, int *skip,
   if(setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
                 (char *)&exclusive, (int)sizeof(exclusive)) == -1) {
     *err = WSAGetLastError();
-    if(*err == WSAENOPROTOOPT)
+    if(*err == WSAENOPROTOOPT && is_wine())
       *skip = 1;
     closesocket(listener);
     return -1;
@@ -166,11 +172,11 @@ int main(void)
     closesocket(probe);
     goto fail;
   }
+  printf("INFO second bind error=%d\n", WSAGetLastError());
   /* SO_EXCLUSIVEADDRUSE conflicts are reported as WSAEACCES by Windows
-     (documented for SO_EXCLUSIVEADDRUSE); WSAEADDRINUSE is accepted too. */
-  if(WSAGetLastError() != WSAEACCES && WSAGetLastError() != WSAEADDRINUSE) {
-    printf("FAIL %s: second bind failed with %d, expected WSAEACCES or "
-           "WSAEADDRINUSE\n", TEST_NAME, WSAGetLastError());
+     (probed: always 10013 on Windows 10 22H2). */
+  if(WSAGetLastError() != WSAEACCES) {
+    printf("FAIL %s: second bind failed with %d, expected WSAEACCES (10013)\n", TEST_NAME, WSAGetLastError());
     closesocket(probe);
     goto fail;
   }

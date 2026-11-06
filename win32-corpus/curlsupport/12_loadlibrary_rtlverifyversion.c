@@ -20,7 +20,7 @@
  *   with ERROR_PROC_NOT_FOUND (127); LoadLibraryW of a missing DLL returns
  *   NULL with ERROR_MOD_NOT_FOUND (126); ws2_32 loads and exports WSAPoll
  *   and WSAStartup.
- * SKIP: ntdll does not export RtlVerifyVersionInfo, or ws2_32 is missing.
+ * SKIP: only under wine when ntdll lacks RtlVerifyVersionInfo.
  */
 #ifndef UNICODE
 #define UNICODE
@@ -60,8 +60,13 @@ int main(void)
 
   p = GetProcAddress(ntdll, "RtlVerifyVersionInfo");
   if(!p) {
-    printf("SKIP %s: ntdll does not export RtlVerifyVersionInfo\n", TEST_NAME);
-    return 77;
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    if(nt && GetProcAddress(nt, "wine_get_version")) {
+      printf("SKIP %s: wine ntdll does not export RtlVerifyVersionInfo\n", TEST_NAME);
+      return 77;
+    }
+    printf("FAIL %s: ntdll does not export RtlVerifyVersionInfo\n", TEST_NAME);
+    return 1;
   }
   /* curl casts through CURLX_FUNCTION_CAST; go through void* here */
   verify = (curl_test_rtlverify_fn)(void *)p;
@@ -109,8 +114,9 @@ int main(void)
   /* Winsock is loaded the way curl loads optional modules */
   ws2 = LoadLibraryW(L"ws2_32.dll");
   if(!ws2) {
-    printf("SKIP %s: ws2_32.dll could not be loaded\n", TEST_NAME);
-    return 77;
+    printf("FAIL %s: ws2_32.dll could not be loaded, GetLastError=%lu\n",
+           TEST_NAME, (unsigned long)GetLastError());
+    return 1;
   }
   if(!GetProcAddress(ws2, "WSAStartup") || !GetProcAddress(ws2, "WSAPoll")) {
     printf("FAIL %s: ws2_32 is missing WSAStartup or WSAPoll, "
