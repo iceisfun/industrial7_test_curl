@@ -6,7 +6,7 @@
  *   number of buffered bytes without consuming them; a partial ReadFile must
  *   return exactly the requested bytes; after the writer closes and the buffer
  *   drains, ReadFile fails with ERROR_BROKEN_PIPE (EOF); writing after the
- *   reader closed must fail with ERROR_NO_DATA or ERROR_BROKEN_PIPE.
+ *   reader closed must fail with ERROR_NO_DATA (232; probed on Win10 22H2).
  *
  * APIs: CreatePipe, PeekNamedPipe, WriteFile, ReadFile, CloseHandle,
  *   GetLastError.
@@ -14,8 +14,8 @@
  * Success means: PeekNamedPipe on an empty pipe reports 0 bytes available and
  *   after writing "xyz" reports 3 without consuming; ReadFile(2) yields "xy",
  *   ReadFile(10) yields "z"; the next ReadFile fails with ERROR_BROKEN_PIPE;
- *   WriteFile to a pipe whose read end is closed fails with ERROR_NO_DATA or
- *   ERROR_BROKEN_PIPE.
+ *   WriteFile to a pipe whose read end is closed fails with ERROR_NO_DATA
+ *   (232).
  *
  * Source reference: no direct pipe-EOF call site was found in lib/, src/ or
  *   tests/. The stdin pipe that src/tool_doswin.c:922 duplicates is the
@@ -92,8 +92,8 @@ static int run(void)
   if(WriteFile(wr, "a", 1, &n, NULL))
     FAILF("WriteFile succeeded with no reader");
   err = GetLastError();
-  if(err != ERROR_NO_DATA && err != ERROR_BROKEN_PIPE)
-    FAILF("WriteFile with no reader: error %lu, expected ERROR_NO_DATA (232) or ERROR_BROKEN_PIPE (109)",
+  if(err != ERROR_NO_DATA)
+    FAILF("WriteFile with no reader: error %lu, expected ERROR_NO_DATA (232)",
           (unsigned long)err);
   CloseHandle(wr);
 

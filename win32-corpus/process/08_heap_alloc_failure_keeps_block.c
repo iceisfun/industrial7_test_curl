@@ -12,7 +12,7 @@
  *   HeapFree, GetLastError.
  *
  * Success means: HeapAlloc(2^50 bytes) returns NULL with a memory-related
- *   error (ERROR_NOT_ENOUGH_MEMORY or ERROR_OUTOFMEMORY); HeapReAlloc to 2^50
+ *   error (ERROR_NOT_ENOUGH_MEMORY, 8, on Win10 22H2); HeapReAlloc to 2^50
  *   returns NULL; the original 100-byte block still holds its pattern and
  *   HeapSize still reports >= 100; HeapValidate passes; HeapFree succeeds.
  *
@@ -61,8 +61,8 @@ static int run(void)
     HeapFree(heap, 0, r);
     FAILF("HeapAlloc(2^50) unexpectedly succeeded");
   }
-  if(err != ERROR_NOT_ENOUGH_MEMORY && err != ERROR_OUTOFMEMORY)
-    FAILF("HeapAlloc(2^50) error %lu, expected ERROR_NOT_ENOUGH_MEMORY or ERROR_OUTOFMEMORY",
+  if(err != ERROR_NOT_ENOUGH_MEMORY)
+    FAILF("HeapAlloc(2^50) error %lu, expected ERROR_NOT_ENOUGH_MEMORY (8)",
           (unsigned long)err);
 
   /* 2. Failed HeapReAlloc leaves the original block intact. */
