@@ -14,8 +14,7 @@
  *   index; GetBestRoute(127.0.0.1) returns NO_ERROR and its dwForwardIfIndex
  *   equals the GetBestInterface index; both equal the dwIndex of the
  *   127.0.0.1 row in the IPv4 address table. A failure to resolve 127.0.0.1
- *   (ERROR_NETWORK_UNREACHABLE) is a FAIL. SKIP (77) if the APIs are not
- *   implemented by the host.
+ *   (ERROR_NETWORK_UNREACHABLE) is a FAIL. A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: no direct curl call site. Relates to the interface
  *   selection performed by curl's --interface handling in lib/if2ip.c:94 (Curl_if2ip).
@@ -61,13 +60,6 @@ static DWORD table_index_of_loopback(void)
   return idx;
 }
 
-/* True when the host runs under wine (wine exports wine_get_version). */
-static int running_on_wine(void)
-{
-  HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-  return ntdll && GetProcAddress(ntdll, "wine_get_version");
-}
-
 /* True when the IPv4 forwarding table lists a non-default route covering
  * 127.0.0.1. Real Windows always lists the 127.0.0.0/8 route on the loopback
  * adapter. The 0.0.0.0/0 default route is excluded: its zero mask matches
@@ -104,9 +96,9 @@ int main(void)
 
   rc = GetBestInterface(dest, &best_if);
   if(rc == ERROR_NOT_SUPPORTED || rc == ERROR_CALL_NOT_IMPLEMENTED) {
-    printf("SKIP %s: GetBestInterface not implemented (rc=%lu)\n",
+    printf("FAIL %s: GetBestInterface not implemented (rc=%lu)\n",
            TEST_NAME, (unsigned long)rc);
-    return 77;
+    return 1;
   }
   if(rc != NO_ERROR) {
     printf("FAIL %s: GetBestInterface(127.0.0.1) rc=%lu GetLastError=%lu\n",
@@ -120,19 +112,16 @@ int main(void)
 
   table_if = table_index_of_loopback();
   if(table_if == 0) {
-    printf("SKIP %s: 127.0.0.1 absent from IPv4 address table; cannot cross-check\n",
+    printf("FAIL %s: 127.0.0.1 absent from IPv4 address table; cannot cross-check\n",
            TEST_NAME);
-    return 77;
+    return 1;
+  }
+  /* Win10 22H2 lists a route covering 127.0.0.1 that is not the default route. */
+  if(!loopback_route_listed()) {
+    printf("FAIL %s: IPv4 forward table has no non-default route covering 127.0.0.1\n", TEST_NAME);
+    return 1;
   }
   if(best_if != table_if) {
-    /* Wine's route enumeration omits the 127.0.0.0/8 route, so its
-     * GetBestInterface falls back to the default route. Real Windows lists
-     * that route, so this SKIP never applies there and the FAIL still does. */
-    if(running_on_wine() && !loopback_route_listed()) {
-      printf("SKIP %s: wine gap - IPv4 forward table has no 127.0.0.0/8 route, so GetBestInterface=%lu falls back to the default route instead of loopback interface %lu\n",
-             TEST_NAME, (unsigned long)best_if, (unsigned long)table_if);
-      return 77;
-    }
     printf("FAIL %s: GetBestInterface=%lu but 127.0.0.1 is on interface %lu (Windows routes 127.0.0.0/8 via the loopback adapter)\n",
            TEST_NAME, (unsigned long)best_if, (unsigned long)table_if);
     return 1;

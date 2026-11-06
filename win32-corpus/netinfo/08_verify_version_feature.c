@@ -11,11 +11,19 @@
  * APIs: VerifyVersionInfoW, VerSetConditionMask (kernel32), RtlGetVersion
  *   (ntdll, resolved with GetProcAddress), OSVERSIONINFOEXW.
  *
+ * Without an application manifest VerifyVersionInfoW sees a compatibility-
+ *   shimmed OS version (Win10 22H2 oracle, every run): a build-only
+ *   comparison GE(real build) is FALSE with ERROR_OLD_WIN_VERSION, while
+ *   GE(1) is TRUE; the combined 10.0.16299 and 10.0.19045 checks are FALSE
+ *   as well. RtlVerifyVersionInfo (ntdll) gives the true answer, which is
+ *   why curl resolves it at run time. This test pins both behaviours.
+ *
  * Success means: GE(6.2) matches (RtlGetVersion major.minor >= 6.2); GE(99.0)
  *   is FALSE with GetLastError()==ERROR_OLD_WIN_VERSION (1150); GE(5.0) is
- *   TRUE; GE(6.2) TRUE implies GE(6.1) TRUE (monotonic); the build check
- *   GE(current build) is TRUE and GE(current build + 1) is FALSE, using a
- *   build-number-only mask as curl does. SKIP (77) if RtlGetVersion cannot be resolved.
+ *   TRUE; GE(6.2) TRUE implies GE(6.1) TRUE (monotonic); the real build check
+ *   through RtlVerifyVersionInfo is GE(current build) STATUS_SUCCESS and
+ *   GE(current build + 1) STATUS_REVISION_MISMATCH (0xC0000059); the
+ *   VerifyVersionInfoW build-only check shows the shim described above. A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: lib/curlx/version_win32.c:84-236
  *   (curlx_verify_windows_version) builds the same mask with
@@ -48,6 +56,16 @@ typedef struct {
 } OUR_RTL_OSVERSIONINFOW;
 
 typedef LONG (WINAPI *RtlGetVersion_fn)(OUR_RTL_OSVERSIONINFOW *);
+typedef LONG (WINAPI *RtlVerifyVersionInfo_fn)(OSVERSIONINFOEXW *, ULONG, ULONGLONG);
+
+static LONG rtl_verify_build(RtlVerifyVersionInfo_fn fn, DWORD build, BYTE cond)
+{
+  OSVERSIONINFOEXW osvi;
+  memset(&osvi, 0, sizeof(osvi));
+  osvi.dwOSVersionInfoSize = sizeof(osvi);
+  osvi.dwBuildNumber = build;
+  return fn(&osvi, VER_BUILDNUMBER, VerSetConditionMask(0, VER_BUILDNUMBER, cond));
+}
 
 /* Returns TRUE if the running OS is >= (or <=, per cond) major.minor(.build).
  * On a failing check, *err receives GetLastError(). */
@@ -99,13 +117,15 @@ int main(void)
   RtlGetVersion_fn p_rtl;
   OUR_RTL_OSVERSIONINFOW real;
   BOOL ge62, ge99, ge50, ge61, expect62, bge, bgt;
+  RtlVerifyVersionInfo_fn p_rvi;
+  LONG st;
   DWORD err = 0;
 
   ntdll = GetModuleHandleW(L"ntdll.dll");
   p_rtl = ntdll ? (RtlGetVersion_fn)(void *)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
   if(!p_rtl) {
-    printf("SKIP %s: RtlGetVersion unavailable to cross-check\n", TEST_NAME);
-    return 77;
+    printf("FAIL %s: RtlGetVersion unavailable to cross-check\n", TEST_NAME);
+    return 1;
   }
   memset(&real, 0, sizeof(real));
   real.dwOSVersionInfoSize = sizeof(real);
@@ -153,22 +173,35 @@ int main(void)
     return 1;
   }
 
-  /* Build refinement, as curlx does when major.minor are equal. */
-  bge = verify_build(real.dwBuildNumber, VER_GREATER_EQUAL, &err);
+  /* Build refinement via RtlVerifyVersionInfo (what curlx resolves). */
+  p_rvi = (RtlVerifyVersionInfo_fn)(void *)GetProcAddress(ntdll, "RtlVerifyVersionInfo");
+  if(!p_rvi) {
+    printf("FAIL %s: ntdll!RtlVerifyVersionInfo not exported\n", TEST_NAME);
+    return 1;
+  }
+  st = rtl_verify_build(p_rvi, real.dwBuildNumber, VER_GREATER_EQUAL);
+  if(st != 0) {
+    printf("FAIL %s: RtlVerifyVersionInfo GE build %lu = 0x%08lX, want 0\n",
+           TEST_NAME, (unsigned long)real.dwBuildNumber, (unsigned long)st);
+    return 1;
+  }
+  st = rtl_verify_build(p_rvi, real.dwBuildNumber + 1, VER_GREATER_EQUAL);
+  if((unsigned long)st != 0xC0000059UL) {
+    printf("FAIL %s: RtlVerifyVersionInfo GE build+1 = 0x%08lX, want STATUS_REVISION_MISMATCH\n",
+           TEST_NAME, (unsigned long)st);
+    return 1;
+  }
+
+  /* No manifest: VerifyVersionInfoW sees the shimmed version. */
+  bge = verify_build(1, VER_GREATER_EQUAL, &err);
   if(!bge) {
-    printf("FAIL %s: GE current build %lu is FALSE (err=%lu)\n",
-           TEST_NAME, (unsigned long)real.dwBuildNumber, (unsigned long)err);
+    printf("FAIL %s: VerifyVersionInfoW GE build 1 is FALSE (err=%lu)\n", TEST_NAME, (unsigned long)err);
     return 1;
   }
-  bgt = verify_build(real.dwBuildNumber + 1, VER_GREATER_EQUAL, &err);
-  if(bgt) {
-    printf("FAIL %s: GE build %lu+1 unexpectedly TRUE\n",
-           TEST_NAME, (unsigned long)real.dwBuildNumber);
-    return 1;
-  }
-  if(err != ERROR_OLD_WIN_VERSION) {
-    printf("FAIL %s: build check failed with GetLastError=%lu (want 1150)\n",
-           TEST_NAME, (unsigned long)err);
+  bgt = verify_build(real.dwBuildNumber, VER_GREATER_EQUAL, &err);
+  if(bgt || err != ERROR_OLD_WIN_VERSION) {
+    printf("FAIL %s: unmanifested VerifyVersionInfoW GE real build %lu: ok=%d err=%lu (Win10 22H2: FALSE, 1150)\n",
+           TEST_NAME, (unsigned long)real.dwBuildNumber, (int)bgt, (unsigned long)err);
     return 1;
   }
 

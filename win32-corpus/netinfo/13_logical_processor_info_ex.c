@@ -14,8 +14,7 @@
  *   TRUE; every record has Size > 0 and stays inside the buffer; core records
  *   (RelationProcessorCore) sum their GroupMask bit counts to exactly
  *   GetActiveProcessorCount(ALL_PROCESSOR_GROUPS); at least one NUMA node
- *   record (RelationNumaNode) is present. SKIP (77) when the call reports
- *   ERROR_CALL_NOT_IMPLEMENTED or ERROR_NOT_SUPPORTED.
+ *   record (RelationNumaNode) is present. A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: none in curl's tree. curl does not size threads from
  *   processor topology; this pins the topology contract for the corpus.
@@ -89,9 +88,9 @@ int main(void)
   if(!GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len)) {
     DWORD err = GetLastError();
     if(err == ERROR_CALL_NOT_IMPLEMENTED || err == ERROR_NOT_SUPPORTED) {
-      printf("SKIP %s: GetLogicalProcessorInformationEx not implemented (err=%lu)\n",
+      printf("FAIL %s: GetLogicalProcessorInformationEx not implemented (err=%lu)\n",
              TEST_NAME, (unsigned long)err);
-      return 77;
+      return 1;
     }
     if(err != ERROR_INSUFFICIENT_BUFFER) {
       printf("FAIL %s: size query GetLastError=%lu (want ERROR_INSUFFICIENT_BUFFER=122)\n",

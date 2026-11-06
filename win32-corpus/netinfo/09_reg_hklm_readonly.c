@@ -14,7 +14,7 @@
  *   a size equal to the byte length from the sized read; a DWORD read of
  *   CurrentMajorVersionNumber, if present, returns REG_DWORD; a missing key
  *   returns ERROR_FILE_NOT_FOUND (2); a missing value under the open key
- *   returns ERROR_FILE_NOT_FOUND. SKIP (77) if the base key itself is absent.
+ *   returns ERROR_FILE_NOT_FOUND. A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: curl's tree does not read HKLM. Its OS gating uses
  *   lib/curlx/version_win32.c:84 (curlx_verify_windows_version) instead of
@@ -48,8 +48,8 @@ int main(void)
 
   rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, BASE_KEY, 0, KEY_READ, &key);
   if(rc == ERROR_FILE_NOT_FOUND) {
-    printf("SKIP %s: %ls key absent on this host\n", TEST_NAME, BASE_KEY);
-    return 77;
+    printf("FAIL %s: %ls key absent on this host\n", TEST_NAME, BASE_KEY);
+    return 1;
   }
   if(rc != ERROR_SUCCESS) {
     printf("FAIL %s: RegOpenKeyExW(HKLM\\%ls) rc=%ld\n", TEST_NAME, BASE_KEY, (long)rc);
@@ -60,8 +60,8 @@ int main(void)
   rc = RegQueryValueExW(key, L"CurrentBuildNumber", NULL, &type, NULL, &size);
   if(rc != ERROR_SUCCESS) {
     RegCloseKey(key);
-    printf("SKIP %s: CurrentBuildNumber not readable (rc=%ld)\n", TEST_NAME, (long)rc);
-    return 77;
+    printf("FAIL %s: CurrentBuildNumber not readable (rc=%ld)\n", TEST_NAME, (long)rc);
+    return 1;
   }
   if(type != REG_SZ) {
     RegCloseKey(key);

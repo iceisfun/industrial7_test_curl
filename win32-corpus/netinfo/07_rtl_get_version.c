@@ -15,7 +15,7 @@
  *   szCSDVersion buffer is NUL-terminated within its 128 characters (the
  *   buffer is prefilled with a non-zero sentinel before the call, so the
  *   terminator must be written by RtlGetVersion).
- *   SKIP (77) if ntdll or the RtlGetVersion export cannot be resolved.
+ *   A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: lib/curlx/version_win32.c:57-58 resolves ntdll exports
  *   with GetProcAddress(GetModuleHandle(TEXT("ntdll")), ...) and
@@ -60,15 +60,15 @@ int main(void)
 
   ntdll = GetModuleHandleW(L"ntdll.dll");
   if(!ntdll) {
-    printf("SKIP %s: ntdll.dll not mapped (GetLastError=%lu)\n",
+    printf("FAIL %s: ntdll.dll not mapped (GetLastError=%lu)\n",
            TEST_NAME, (unsigned long)GetLastError());
-    return 77;
+    return 1;
   }
   p_rtl = (RtlGetVersion_fn)(void *)GetProcAddress(ntdll, "RtlGetVersion");
   if(!p_rtl) {
-    printf("SKIP %s: RtlGetVersion export absent (GetLastError=%lu)\n",
+    printf("FAIL %s: RtlGetVersion export absent (GetLastError=%lu)\n",
            TEST_NAME, (unsigned long)GetLastError());
-    return 77;
+    return 1;
   }
 
   memset(&osv, 0, sizeof(osv));

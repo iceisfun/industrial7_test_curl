@@ -16,8 +16,7 @@
  *   and reports a size >= sizeof(IP_ADAPTER_ADDRESSES); rc(full buffer)
  *   == NO_ERROR; the Next chain terminates
  *   within the buffer; the count matches on a second full call.
- *   Wine reports the same protocol, so no SKIP is expected; if the first
- *   query returns a different error (e.g. ERROR_NOT_SUPPORTED), the test SKIPs.
+ *   Any other error from the first query is a FAIL.
  *
  * Source reference: no direct Windows call site in the curl tree. The
  *   variable-length interface-table handling this exercises is the Windows
@@ -76,9 +75,9 @@ int main(void)
   /* 1. NULL buffer, size 0: must ask for more space. */
   rc = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, NULL, &size0);
   if(rc == ERROR_NOT_SUPPORTED || rc == ERROR_CALL_NOT_IMPLEMENTED) {
-    printf("SKIP %s: GetAdaptersAddresses not implemented (rc=%lu)\n",
+    printf("FAIL %s: GetAdaptersAddresses not implemented (rc=%lu)\n",
            TEST_NAME, (unsigned long)rc);
-    return 77;
+    return 1;
   }
   if(rc != ERROR_BUFFER_OVERFLOW) {
     printf("FAIL %s: size query rc=%lu (want ERROR_BUFFER_OVERFLOW=111) GetLastError=%lu\n",

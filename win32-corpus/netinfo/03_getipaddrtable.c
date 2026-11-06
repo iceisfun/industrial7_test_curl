@@ -13,7 +13,7 @@
  *   size >= sizeof(MIB_IPADDRTABLE); the sized call returns NO_ERROR;
  *   dwNumEntries >= 1; an entry with address 127.0.0.1 and mask 255.0.0.0
  *   exists; entries are in ascending host-order address order.
- *   SKIP (77) if the API is not implemented by the host.
+ *   A missing API is a FAIL (Win10 22H2 has it).
  *
  * Source reference: none. curl's tree has no GetIpAddrTable call site. The
  *   test is the IPv4 table analogue of the getifaddrs() enumeration in
@@ -47,9 +47,9 @@ int main(void)
 
   rc = GetIpAddrTable(NULL, &size, FALSE);
   if(rc == ERROR_NOT_SUPPORTED || rc == ERROR_CALL_NOT_IMPLEMENTED) {
-    printf("SKIP %s: GetIpAddrTable not implemented (rc=%lu)\n",
+    printf("FAIL %s: GetIpAddrTable not implemented (rc=%lu)\n",
            TEST_NAME, (unsigned long)rc);
-    return 77;
+    return 1;
   }
   if(rc != ERROR_INSUFFICIENT_BUFFER) {
     printf("FAIL %s: size query rc=%lu (want ERROR_INSUFFICIENT_BUFFER=122) GetLastError=%lu\n",

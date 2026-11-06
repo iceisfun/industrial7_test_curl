@@ -19,7 +19,7 @@
  *   index of 127.0.0.1 in GetIpAddrTable; the listener reports 127.0.0.1 and
  *   a nonzero port; connect succeeds; the accepted peer address is 127.0.0.1
  *   and its port equals the client's bound ephemeral port. Only loopback
- *   traffic is used. SKIP (77) if no loopback adapter or no 127.0.0.1 entry
+ *   traffic is used. A missing API is a FAIL (Win10 22H2 has it).0.0.1 entry
  *   is reported. A WSAStartup failure is a FAIL.
  *
  * Source reference: lib/if2ip.c:94 (Curl_if2ip, the interface-to-address
@@ -127,14 +127,14 @@ int main(void)
 
   gaa_idx = loopback_index_gaa(&gaa_addr);
   if(gaa_idx == 0 || !gaa_addr) {
-    printf("SKIP %s: no loopback adapter owning 127.0.0.1 in GetAdaptersAddresses\n",
+    printf("FAIL %s: no loopback adapter owning 127.0.0.1 in GetAdaptersAddresses\n",
            TEST_NAME);
-    return 77;
+    return 1;
   }
   tbl_idx = loopback_index_table();
   if(tbl_idx == 0) {
-    printf("SKIP %s: 127.0.0.1 absent from GetIpAddrTable\n", TEST_NAME);
-    return 77;
+    printf("FAIL %s: 127.0.0.1 absent from GetIpAddrTable\n", TEST_NAME);
+    return 1;
   }
   if(gaa_idx != tbl_idx) {
     printf("FAIL %s: GetAdaptersAddresses index %lu != GetIpAddrTable index %lu for 127.0.0.1\n",

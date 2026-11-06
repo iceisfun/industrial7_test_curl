@@ -5,8 +5,7 @@
  *   iphlpapi.dll with LoadLibraryW/GetProcAddress, instead of linking them,
  *   and verify that the ICMP echo handle lifecycle works: two handles can be
  *   created, both are valid and distinct, and both close successfully.
- *   The test SKIPs when iphlpapi or either export is missing, which is the
- *   situation on hosts without the ICMP helper.
+ *   A missing iphlpapi or export is a FAIL (present on Win10 22H2).
  *
  * APIs: LoadLibraryW, GetProcAddress, FreeLibrary, IcmpCreateFile,
  *   IcmpCloseHandle (iphlpapi.dll, resolved dynamically).
@@ -45,18 +44,18 @@ int main(void)
 
   lib = LoadLibraryW(L"iphlpapi.dll");
   if(!lib) {
-    printf("SKIP %s: iphlpapi.dll not loadable (GetLastError=%lu)\n",
+    printf("FAIL %s: iphlpapi.dll not loadable (GetLastError=%lu)\n",
            TEST_NAME, (unsigned long)GetLastError());
-    return 77;
+    return 1;
   }
 
   p_create = (IcmpCreateFile_fn)(void *)GetProcAddress(lib, "IcmpCreateFile");
   p_close = (IcmpCloseHandle_fn)(void *)GetProcAddress(lib, "IcmpCloseHandle");
   if(!p_create || !p_close) {
     FreeLibrary(lib);
-    printf("SKIP %s: IcmpCreateFile/IcmpCloseHandle export absent (GetLastError=%lu)\n",
+    printf("FAIL %s: IcmpCreateFile/IcmpCloseHandle export absent (GetLastError=%lu)\n",
            TEST_NAME, (unsigned long)GetLastError());
-    return 77;
+    return 1;
   }
 
   h1 = p_create();

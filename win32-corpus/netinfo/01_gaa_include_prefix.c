@@ -14,9 +14,8 @@
  *   address 127.0.0.1 and at least one prefix entry 127.0.0.0 / 8.
  *   Every AF_INET prefix entry on the loopback adapter has a PrefixLength
  *   <= 32.
- *   If no loopback adapter is reported at all, the test SKIPs (77). If no
- *   loopback adapter reports any prefix entry and the host is wine (detected
- *   via ntdll!wine_get_version), it also SKIPs; on real Windows that FAILs.
+ *   No loopback adapter, or a loopback adapter without any prefix entry, is a
+ *   FAIL (Win10 22H2 reports 127.0.0.0/8; verified on the oracle).
  *
  * Source reference: curl has no direct Windows call site for
  *   GetAdaptersAddresses. This is the Windows counterpart of the
@@ -42,14 +41,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* curl detects wine through the exported ntdll!wine_get_version
-   (lib/vtls/schannel.c:2625). Used only to classify a missing feature. */
-static BOOL is_wine(void)
-{
-  HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-  return ntdll && GetProcAddress(ntdll, "wine_get_version") != NULL;
-}
 
 static PIP_ADAPTER_ADDRESSES get_adapters(ULONG flags, ULONG *rc_out)
 {
@@ -127,8 +118,8 @@ int main(void)
 
   if(!found_loopback) {
     free(adapters);
-    printf("SKIP %s: no IF_TYPE_SOFTWARE_LOOPBACK adapter reported\n", TEST_NAME);
-    return 77;
+    printf("FAIL %s: no IF_TYPE_SOFTWARE_LOOPBACK adapter reported\n", TEST_NAME);
+    return 1;
   }
   if(!found_addr) {
     free(adapters);
@@ -137,11 +128,6 @@ int main(void)
   }
   if(prefix_count == 0) {
     free(adapters);
-    if(is_wine()) {
-      printf("SKIP %s: wine does not populate the prefix list (GAA_FLAG_INCLUDE_PREFIX)\n",
-             TEST_NAME);
-      return 77;
-    }
     printf("FAIL %s: GAA_FLAG_INCLUDE_PREFIX returned no prefix entries on any loopback adapter\n",
            TEST_NAME);
     return 1;
