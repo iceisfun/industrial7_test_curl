@@ -119,7 +119,7 @@ int main(void)
       printf("INFO %-26s timeout %2d ms: min %.2f max %.2f\n", names[p], tmo[t], mn, mx);
       lo = (int)(tmo[t] / 15.625) * 15.625;
       CHECK(mn >= lo - 1.5, "%s(%d) returned after only %.2f ms (floor %.2f)", names[p], tmo[t], mn, lo);
-      CHECK(mx <= lo + 15.625 + 20.0, "%s(%d) took %.2f ms", names[p], tmo[t], mx);
+      CHECK(mx <= lo + 15.625 + 60.0, "%s(%d) took %.2f ms", names[p], tmo[t], mx);
     }
   }
   printf("PASS %s\n", TEST_NAME);

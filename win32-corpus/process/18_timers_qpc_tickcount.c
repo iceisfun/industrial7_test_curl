@@ -48,9 +48,17 @@ int main(void)
     long long d;
     qtr_fn q;
     ULONG mn, mx, cur;
+    int coarse = 1;
 
     if (!QueryPerformanceFrequency(&fq) || fq.QuadPart != 10000000LL)
         FAILF("QPF = %lld, expected 10000000", (long long)fq.QuadPart);
+    {
+        qtr_fn q0 = (qtr_fn)(void *)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryTimerResolution");
+        ULONG a0, b0, c0 = 156250;
+        if (q0 && q0(&a0, &b0, &c0) == 0)
+            coarse = (c0 >= 150000);
+        printf("INFO start timer resolution %lu, tick-bound checks %s\n", (unsigned long)c0, coarse ? "on" : "off (another process raised the resolution)");
+    }
     QueryPerformanceCounter(&a);
     Sleep(50);
     QueryPerformanceCounter(&b);
@@ -63,7 +71,7 @@ int main(void)
         while ((s1 = GetTickCount64()) == s0) ;
         s0 = s1;
         while ((s1 = GetTickCount64()) == s0) ;
-        if (s1 - s0 < 10 || s1 - s0 > 20)
+        if (coarse && (s1 - s0 < 10 || s1 - s0 > 20))
             FAILF("GetTickCount64 step %llu ms, expected 10..20", (unsigned long long)(s1 - s0));
     }
     t = GetTickCount64();
@@ -77,7 +85,7 @@ int main(void)
     t0 = GetTickCount();
     for (i = 0; i < 100; i++) Sleep(1);
     t1 = GetTickCount();
-    if (t1 - t0 < 1000 || t1 - t0 > 2500)
+    if (coarse && (t1 - t0 < 1000 || t1 - t0 > 2500))
         FAILF("100 x Sleep(1) took %lu ms, expected 1000..2500 (15.6 ms tick)", (unsigned long)(t1 - t0));
 
     QueryPerformanceCounter(&prev);

@@ -84,14 +84,14 @@ int main(void)
   static const unsigned char lo4[4] = { 127, 0, 0, 1 };
 
   if(!dns) {
-    printf("SKIP %s: dnsapi.dll not loadable\n", T);
-    return 77;
+    printf("FAIL %s: dnsapi.dll not loadable\n", T);
+    return 1;
   }
   pQuery = (PFN_DnsQuery_A)(void *)GetProcAddress(dns, "DnsQuery_A");
   pFree = (PFN_DnsFree)(void *)GetProcAddress(dns, "DnsFree");
   if(!pQuery || !pFree) {
-    printf("SKIP %s: DnsQuery_A/DnsFree not exported\n", T);
-    return 77;
+    printf("FAIL %s: DnsQuery_A/DnsFree not exported\n", T);
+    return 1;
   }
 
   q("localhost", DNS_TYPE_A, 0, 'A', lo4);

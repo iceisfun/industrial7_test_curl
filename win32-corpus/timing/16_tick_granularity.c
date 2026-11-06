@@ -76,6 +76,7 @@ int main(void)
   LARGE_INTEGER f;
   ULONGLONG last, now, minstep = ~0ULL, maxstep = 0, end;
   ULONG minr = 0, maxr = 0, cur = 0, cur1 = 0, cur2 = 0;
+  int deflt = 0;
   nqtr_fn nq = (nqtr_fn)(void *)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryTimerResolution");
   precise_fn pre = (precise_fn)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetSystemTimePreciseAsFileTime");
   FILETIME a, b;
@@ -141,7 +142,9 @@ int main(void)
   }
 
   if(nq) {
-    CHECK(cur == 156250, "default timer resolution %lu, expected 156250", (unsigned long)cur);
+    if(cur != 156250)
+      printf("INFO start resolution %lu: another process raised it, default-resolution checks off\n", (unsigned long)cur);
+    deflt = (cur == 156250);
     CHECK(timeBeginPeriod(1) == TIMERR_NOERROR, "timeBeginPeriod");
     nq(&minr, &maxr, &cur1);
     timeEndPeriod(1);
@@ -149,7 +152,8 @@ int main(void)
     nq(&minr, &maxr, &cur2);
     printf("INFO resolution with period 1: %lu, after end: %lu\n", (unsigned long)cur1, (unsigned long)cur2);
     CHECK(cur1 == 10000, "resolution under timeBeginPeriod(1) is %lu", (unsigned long)cur1);
-    CHECK(cur2 == 156250, "resolution after timeEndPeriod is %lu", (unsigned long)cur2);
+    if(deflt)
+      CHECK(cur2 == 156250, "resolution after timeEndPeriod is %lu", (unsigned long)cur2);
   }
 
   printf("PASS %s\n", TEST_NAME);

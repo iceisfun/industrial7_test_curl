@@ -79,8 +79,12 @@ int main(void)
   SetLastError(1234);
   e = TlsSetValue(i, NULL) ? 1 : 0;
   INFO("TlsSetValue(freed) ok=%lu gle=%lu", e, GetLastError());
+  EXPECT(e == 1, "TlsSetValue on a freed in-range index failed (Win10 22H2 succeeds)");
+  EXPECT(GetLastError() == 1234, "TlsSetValue(freed) disturbed the last error: %lu", GetLastError());
+  SetLastError(0);
   v = TlsGetValue(i);
   INFO("TlsGetValue(freed) v=%p gle=%lu", v, GetLastError());
+  EXPECT(v == NULL && GetLastError() == 0, "TlsGetValue(freed) v=%p gle=%lu, expected NULL / 0", v, GetLastError());
 
   SetLastError(0);
   v = FlsGetValue(FLS_OUT_OF_INDEXES); e = GetLastError();

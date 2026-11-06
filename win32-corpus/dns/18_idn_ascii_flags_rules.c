@@ -88,14 +88,14 @@ int main(void)
   int n;
 
   if(!lib) {
-    printf("SKIP %s: normaliz.dll not loadable\n", T);
-    return 77;
+    printf("FAIL %s: normaliz.dll not loadable\n", T);
+    return 1;
   }
   pToAscii = (PFN_IdnToAscii)(void *)GetProcAddress(lib, "IdnToAscii");
   pToUnicode = (PFN_IdnToUnicode)(void *)GetProcAddress(lib, "IdnToUnicode");
   if(!pToAscii || !pToUnicode) {
-    printf("SKIP %s: IdnToAscii/IdnToUnicode not exported\n", T);
-    return 77;
+    printf("FAIL %s: IdnToAscii/IdnToUnicode not exported\n", T);
+    return 1;
   }
 
   conv(0, L"localhost", L"localhost");

@@ -18,7 +18,7 @@
  *   IdnToUnicode(L"xn--bcher-kva.example") yields L"bücher.example".
  *   IdnToAscii with a 64-character ASCII label (over 63 octets) returns 0.
  *   If neither normaliz.dll nor kernel32.dll exports the IDN functions, the
- *   IDN part SKIPs after the LCMapString check.
+ *   IDN part FAILs after the LCMapString check.
  *
  * Source: lib/idn.c:167-192 (win32_idn_to_ascii: MultiByteToWideChar with
  *         MB_ERR_INVALID_CHARS, IdnToAscii with the length that includes the
@@ -91,7 +91,7 @@ int main(void)
     }
   }
   if(!pToAscii || !pToUnicode)
-    SKIPF("IdnToAscii/IdnToUnicode not exported by normaliz.dll or kernel32.dll");
+    FAILF("IdnToAscii/IdnToUnicode not exported by normaliz.dll or kernel32.dll");
 
   /* ASCII host: length includes the NUL, as lib/idn.c passes it. */
   memset(out, 0, sizeof(out));

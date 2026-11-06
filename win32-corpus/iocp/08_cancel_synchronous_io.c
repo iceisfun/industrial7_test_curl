@@ -10,7 +10,7 @@
  *   (retried until the reader has entered ReadFile; ERROR_NOT_FOUND is the
  *   expected answer before that). The reader's ReadFile then fails with
  *   ERROR_OPERATION_ABORTED and transfers 0 bytes, and the thread exits.
- *   If the API is missing (pre-Vista), the test SKIPs with ERROR_CALL_NOT_IMPLEMENTED.
+ *   The API exists on every supported Windows; any error other than ERROR_NOT_FOUND is a FAIL.
  * Source: none. Generic Win32 contract. curl does not call this API.
  */
 
@@ -86,13 +86,6 @@ int main(void)
     if(CancelSynchronousIo(th)) {
       cancelled = TRUE;
       break;
-    }
-    if(GetLastError() == ERROR_CALL_NOT_IMPLEMENTED) {
-      printf("SKIP %s: CancelSynchronousIo not implemented\n", TEST_NAME);
-      CloseHandle(th);
-      CloseHandle(rd);
-      CloseHandle(wr);
-      return 77;
     }
     if(GetLastError() != ERROR_NOT_FOUND)
       fail_exit("CancelSynchronousIo", GetLastError());

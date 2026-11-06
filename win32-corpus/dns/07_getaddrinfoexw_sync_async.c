@@ -5,7 +5,7 @@
  * newer resolver paths can use) in both synchronous mode and overlapped
  * (asynchronous) mode. GetAddrInfoExW, FreeAddrInfoExW and
  * GetAddrInfoExOverlappedResult are resolved with LoadLibrary/GetProcAddress
- * from ws2_32.dll, so a stack without them SKIPs.
+ * from ws2_32.dll, so a stack without them FAILs.
  *
  * APIs: WSAStartup, LoadLibraryW, GetProcAddress, GetAddrInfoExW,
  *       GetAddrInfoExOverlappedResult, GetAddrInfoExCancel,
@@ -20,7 +20,7 @@
  *   WSA_IO_PENDING (997), signals the event, GetAddrInfoExOverlappedResult
  *   returns 0 and the list holds ::1 then 127.0.0.1. A lookup of a
  *   nonexistent ".invalid" name returns WSA_IO_PENDING and completes with
- *   WSAHOST_NOT_FOUND (11001) and no list. A missing export is a SKIP.
+ *   WSAHOST_NOT_FOUND (11001) and no list. A missing export is a FAIL.
  *
  * Source: no direct curl call site (curl uses the ANSI getaddrinfo() path,
  *         lib/vdns/asyn-thrdd.c:415). This covers the extended resolver
@@ -116,16 +116,16 @@ int main(void)
 
   ws2 = LoadLibraryW(L"ws2_32.dll");
   if(!ws2)
-    SKIPF("ws2_32.dll could not be loaded");
+    FAILF("ws2_32.dll could not be loaded");
   pGetAddrInfoExW = (PFN_GetAddrInfoExW)(void *)GetProcAddress(ws2, "GetAddrInfoExW");
   pFreeAddrInfoExW = (PFN_FreeAddrInfoExW)(void *)GetProcAddress(ws2, "FreeAddrInfoExW");
   pResult = (PFN_GetAddrInfoExOverlappedResult)(void *)GetProcAddress(ws2,
               "GetAddrInfoExOverlappedResult");
   pCancel = (PFN_GetAddrInfoExCancel)(void *)GetProcAddress(ws2, "GetAddrInfoExCancel");
   if(!pGetAddrInfoExW || !pFreeAddrInfoExW)
-    SKIPF("GetAddrInfoExW/FreeAddrInfoExW not exported (pre-Win8 stack)");
+    FAILF("GetAddrInfoExW/FreeAddrInfoExW not exported (pre-Win8 stack)");
   if(!pResult)
-    SKIPF("GetAddrInfoExOverlappedResult not exported");
+    FAILF("GetAddrInfoExOverlappedResult not exported");
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;

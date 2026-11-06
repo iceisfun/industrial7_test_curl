@@ -17,7 +17,7 @@
  *   through the resolved pointer returns STATUS_SUCCESS with non-zero output,
  *   a provider opened through the resolved pointer closes successfully, and
  *   CertOpenStore(CERT_STORE_PROV_MEMORY) returns a handle that CertCloseStore
- *   accepts. SKIP when a module or export is absent.
+ *   accepts. FAIL when a module or export is absent (all exist on Win10).
  *
  * Source: the dynamic lookup mirrors the GetProcAddress use in
  *   lib/curlx/version_win32.c:58 and lib/vtls/schannel.c:2625 (both resolve
@@ -57,9 +57,9 @@ typedef BOOL (WINAPI *pfn_CertCloseStore)(HCERTSTORE, DWORD);
   do {                                                                \
     var = (type)(void *)GetProcAddress((mod), sym);                           \
     if(!var) {                                                        \
-      printf("SKIP %s: %s not exported (GetLastError %lu)\n", NAME,   \
+      printf("FAIL %s: %s not exported (GetLastError %lu)\n", NAME,   \
              sym, (unsigned long)GetLastError());                     \
-      rc = 77;                                                        \
+      rc = 1;                                                        \
       goto out;                                                       \
     }                                                                 \
   } while(0)
@@ -82,15 +82,15 @@ int main(void)
 
   hBcrypt = LoadLibraryW(L"bcrypt.dll");
   if(!hBcrypt) {
-    printf("SKIP %s: bcrypt.dll not loadable (GetLastError %lu)\n", NAME,
+    printf("FAIL %s: bcrypt.dll not loadable (GetLastError %lu)\n", NAME,
            (unsigned long)GetLastError());
-    return 77;
+    return 1;
   }
   hCrypt32 = LoadLibraryW(L"crypt32.dll");
   if(!hCrypt32) {
-    printf("SKIP %s: crypt32.dll not loadable (GetLastError %lu)\n", NAME,
+    printf("FAIL %s: crypt32.dll not loadable (GetLastError %lu)\n", NAME,
            (unsigned long)GetLastError());
-    rc = 77;
+    rc = 1;
     goto out;
   }
 
