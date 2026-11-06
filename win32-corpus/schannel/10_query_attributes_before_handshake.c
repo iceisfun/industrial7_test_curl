@@ -6,18 +6,13 @@
  * ssl_connect_done (lib/vtls/schannel.c:1735-1748) and
  * SECPKG_ATTR_REMOTE_CERT_CONTEXT later (lib/vtls/schannel.c:1131, 1669).
  * This test queries a context that has only produced its ClientHello. The
- * values reported before the handshake are not part of the documented
- * contract, so the test asserts only invariants that must hold either way: if
- * the stream-size call returns SEC_E_OK, the header size and maximum message
- * size it reports must be non-zero; and no remote certificate context may be
- * returned before the peer has presented one. Wine returns Schannel's default
- * stream sizes (cbMaximumMessage 16384, cbHeader 5) here, which satisfies these
- * invariants. An earlier version asserted that the sizes must not be usable at
- * all; that expectation was not documented, so it was dropped.
+ * Win10 22H2 answers both queries with SEC_E_INVALID_HANDLE (0x80090301) and
+ * does not write the output buffer (probed with a 0xAA-filled buffer; wine
+ * returns default stream sizes instead, which is a wine difference).
  *
- * Note: the positive path (non-zero cbMaximumMessage and a real remote
- * certificate after a full handshake) needs a TLS server with a certificate,
- * which this corpus does not provision (no certificate store changes allowed).
+ * The positive path (real stream sizes and remote certificate after a full
+ * handshake) is covered by schannel/15_loopback_handshake_tls12, which uses a
+ * self-signed server certificate made at run time.
  *
  * APIs: LoadLibraryW(secur32.dll), GetProcAddress, AcquireCredentialsHandleW,
  *       InitializeSecurityContextW, QueryContextAttributesW,
@@ -261,15 +256,22 @@ int main(void) {
   if (f.FreeContextBuffer(ob.pvBuffer) != SEC_E_OK)
     return fail_msg(TEST_NAME, "FreeContextBuffer(first token) failed");
 
-  memset(&ss, 0, sizeof(ss));
+  /* Win10 22H2 (probed, std and adm): before the handshake completes every
+     query fails with SEC_E_INVALID_HANDLE (0x80090301) and leaves the output
+     buffer untouched. */
+  memset(&ss, 0xAA, sizeof(ss));
   st = f.QueryContextAttributesW(&ctx, SECPKG_ATTR_STREAM_SIZES, &ss);
-  if (st == SEC_E_OK && (ss.cbMaximumMessage == 0 || ss.cbHeader == 0))
-    return fail_msg(TEST_NAME,
-                    "stream sizes reported OK with a zero header or maximum message size");
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "stream-size query before the handshake (expected SEC_E_INVALID_HANDLE)", st);
+  if (ss.cbHeader != 0xAAAAAAAAu || ss.cbMaximumMessage != 0xAAAAAAAAu)
+    return fail_msg(TEST_NAME, "stream-size query modified the output buffer despite failing");
 
+  pc = (PCCERT_CONTEXT)(ULONG_PTR)1;
   st = f.QueryContextAttributesW(&ctx, SECPKG_ATTR_REMOTE_CERT_CONTEXT, &pc);
-  if (st == SEC_E_OK && pc != NULL)
-    return fail_msg(TEST_NAME, "remote certificate returned before the handshake completed");
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "remote-cert query before the handshake (expected SEC_E_INVALID_HANDLE)", st);
+  if (pc != (PCCERT_CONTEXT)(ULONG_PTR)1)
+    return fail_msg(TEST_NAME, "remote-cert query modified the output pointer despite failing");
 
   /* Control: a zeroed (never-valid) context must not be accepted by either
      query. This keeps the two calls above from passing against a stub that

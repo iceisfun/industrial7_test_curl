@@ -9,14 +9,13 @@
  * allows TLS 1.3 to be negotiated.
  *
  * APIs: LoadLibraryW(secur32.dll), GetProcAddress, AcquireCredentialsHandleW,
- *       FreeCredentialsHandle, GetProcAddress(ntdll.dll, wine_get_version)
- *       used only to recognise Wine for the SKIP decision.
+ *       FreeCredentialsHandle.
  *
  * Success: AcquireCredentialsHandleW returns SEC_E_OK with a valid CredHandle
  *   and FreeCredentialsHandle returns SEC_E_OK.
- * SKIP: running under Wine and Wine rejects SCH_CREDENTIALS version 5
- *   (Wine's Schannel only accepts the older structures in some builds).
- *   On native Windows this failure is a FAIL.
+ * Win10 22H2 accepts SCH_CREDENTIALS v5 (probed, std and adm). Wine's Schannel
+ *   rejects it; that wine-detection SKIP path was removed, so a rejection is a
+ *   FAIL everywhere.
  *
  * Source reference: lib/vtls/schannel.c:620-660 (SCH_CREDENTIALS and
  *   TLS_PARAMETERS setup, grbitDisabledProtocols = ~enabled_protocols),
@@ -220,7 +219,6 @@ static inline const unsigned char *find_bytes(const unsigned char *h, size_t hn,
 int main(void) {
   sspi_fns f;
   HMODULE m;
-  HMODULE nt;
   CredHandle cred;
   SCH_CREDENTIALS sc;
   TLS_PARAMETERS tp;
@@ -253,14 +251,6 @@ int main(void) {
   st = f.AcquireCredentialsHandleW(NULL, UNISP_NAME, SECPKG_CRED_OUTBOUND, NULL,
                                    &sc, NULL, NULL, &cred, &exp);
   if (st != SEC_E_OK) {
-    nt = GetModuleHandleW(L"ntdll.dll");
-    if (nt && GetProcAddress(nt, "wine_get_version")) {
-      char b[256];
-      snprintf(b, sizeof(b),
-               "Wine does not accept SCH_CREDENTIALS v5 (AcquireCredentialsHandleW 0x%08lx)",
-               (unsigned long)(ULONG)st);
-      return skip_msg(TEST_NAME, b);
-    }
     return fail_status(TEST_NAME, "AcquireCredentialsHandleW(SCH_CREDENTIALS)", st);
   }
   if (!cred_handle_valid(&cred))

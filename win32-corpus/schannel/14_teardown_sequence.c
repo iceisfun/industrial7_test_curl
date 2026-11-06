@@ -13,10 +13,17 @@
  *       InitializeSecurityContextW, FreeContextBuffer, DeleteSecurityContext,
  *       FreeCredentialsHandle.
  *
- * Success: FreeContextBuffer, DeleteSecurityContext and FreeCredentialsHandle
- *   return SEC_E_OK in order; DeleteSecurityContext(zeroed CtxtHandle) and
- *   FreeCredentialsHandle(zeroed CredHandle) both return SEC_E_INVALID_HANDLE
- *   (0x80090301).
+ * Success (probed on Win10 22H2, std and adm identical):
+ *   FreeContextBuffer, DeleteSecurityContext and FreeCredentialsHandle return
+ *   SEC_E_OK in order. Afterwards:
+ *   - a second DeleteSecurityContext / FreeCredentialsHandle on the same
+ *     handle returns SEC_E_INVALID_HANDLE (0x80090301);
+ *   - FreeCredentialsHandle(zeroed CredHandle) returns SEC_E_INVALID_HANDLE;
+ *   - DeleteSecurityContext(zeroed CtxtHandle) returns SEC_E_OK (0): a zeroed
+ *     context is accepted as a no-op on Windows (the earlier expectation of
+ *     SEC_E_INVALID_HANDLE was wrong, and wine's value is not authoritative);
+ *   - handles filled with 0xFF and NULL pointers return SEC_E_INVALID_HANDLE;
+ *   - FreeContextBuffer(NULL) returns SEC_E_OK.
  *
  * Source reference: lib/vtls/schannel.c:1574 (FreeCredentialsHandle in the
  *   cleanup path), lib/vtls/schannel.c:2584 (DeleteSecurityContext in close),
@@ -265,19 +272,42 @@ int main(void) {
   if (st != SEC_E_OK)
     return fail_status(TEST_NAME, "FreeCredentialsHandle(cred)", st);
 
+  /* Second release of the same handles. */
+  st = f.DeleteSecurityContext(&ctx);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "second DeleteSecurityContext (expected SEC_E_INVALID_HANDLE)", st);
+  st = f.FreeCredentialsHandle(&cred);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "second FreeCredentialsHandle (expected SEC_E_INVALID_HANDLE)", st);
+
+  /* Zeroed handles. */
   memset(&zctx, 0, sizeof(zctx));
   st = f.DeleteSecurityContext(&zctx);
-  if (st != SEC_E_INVALID_HANDLE)
-    return fail_status(TEST_NAME,
-                       "DeleteSecurityContext(zeroed handle) did not return SEC_E_INVALID_HANDLE",
-                       st);
-
+  if (st != SEC_E_OK)
+    return fail_status(TEST_NAME, "DeleteSecurityContext(zeroed handle) (expected SEC_E_OK on Windows)", st);
   memset(&zcred, 0, sizeof(zcred));
   st = f.FreeCredentialsHandle(&zcred);
   if (st != SEC_E_INVALID_HANDLE)
-    return fail_status(TEST_NAME,
-                       "FreeCredentialsHandle(zeroed handle) did not return SEC_E_INVALID_HANDLE",
-                       st);
+    return fail_status(TEST_NAME, "FreeCredentialsHandle(zeroed handle) (expected SEC_E_INVALID_HANDLE)", st);
+
+  /* All-ones handles and NULL. */
+  memset(&zctx, 0xff, sizeof(zctx));
+  st = f.DeleteSecurityContext(&zctx);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "DeleteSecurityContext(0xFF handle) (expected SEC_E_INVALID_HANDLE)", st);
+  memset(&zcred, 0xff, sizeof(zcred));
+  st = f.FreeCredentialsHandle(&zcred);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "FreeCredentialsHandle(0xFF handle) (expected SEC_E_INVALID_HANDLE)", st);
+  st = f.DeleteSecurityContext(NULL);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "DeleteSecurityContext(NULL) (expected SEC_E_INVALID_HANDLE)", st);
+  st = f.FreeCredentialsHandle(NULL);
+  if (st != SEC_E_INVALID_HANDLE)
+    return fail_status(TEST_NAME, "FreeCredentialsHandle(NULL) (expected SEC_E_INVALID_HANDLE)", st);
+  st = f.FreeContextBuffer(NULL);
+  if (st != SEC_E_OK)
+    return fail_status(TEST_NAME, "FreeContextBuffer(NULL) (expected SEC_E_OK)", st);
 
   return pass_msg(TEST_NAME);
 }
