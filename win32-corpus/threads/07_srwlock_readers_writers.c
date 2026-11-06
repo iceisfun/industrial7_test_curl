@@ -41,7 +41,7 @@
 static SRWLOCK lock = SRWLOCK_INIT;
 static volatile LONG inside_shared = 0;
 static volatile LONG max_inside = 0;
-static volatile LONG reader_ok_gate = 0;
+static volatile LONG arrived = 0;
 
 static long long pair_a = 0, pair_b = 0;
 static volatile LONG torn_reads = 0;
@@ -61,13 +61,16 @@ static DWORD WINAPI shared_holder(LPVOID p)
     else
       break;
   }
-  /* wait until every reader is inside at once, bounded */
+  /* barrier: every reader is inside at once, bounded. The arrival counter is
+     never decremented (a counter that is decremented on leaving lets a late
+     holder miss the "all inside" instant). Sleep(1) lasts ~15.6 ms on
+     Windows (default timer tick), so yield instead of sleeping. */
+  InterlockedIncrement(&arrived);
   {
-    DWORD waited = 0;
-    while(InterlockedCompareExchange(&inside_shared, 0, 0) < READERS && waited < 5000) {
-      Sleep(1);
-      waited++;
-    }
+    ULONGLONG t0 = GetTickCount64();
+    while(InterlockedCompareExchange(&arrived, 0, 0) < READERS &&
+          GetTickCount64() - t0 < 5000)
+      Sleep(0);
   }
   InterlockedDecrement(&inside_shared);
   ReleaseSRWLockShared(&lock);

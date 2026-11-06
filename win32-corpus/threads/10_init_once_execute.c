@@ -12,20 +12,19 @@
  *   InterlockedIncrement, Sleep.
  *
  * Success: the success callback runs once with 8 racing threads, all report
- *   TRUE and context 0xBEEF; the failing callback is invoked on the first
+ *   TRUE and context 0xBEE8; the failing callback is invoked on the first
  *   attempt (InitOnceExecuteOnce returns FALSE) and then the next attempt
  *   succeeds and the initial state persists; manual Begin/Complete reports
  *   fPending TRUE then FALSE with the stored context.
  *
- * Known wine gap (wine-9.0, observed): InitOnceExecuteOnce with a non-NULL
- *   lpContext out-parameter returns FALSE with GLE=0 when the callback returned
- *   TRUE after storing a context value (the stored value is still delivered).
- *   Windows documents success here. Under wine, step 0 is reported as SKIP
- *   (exit 77) because the racers in step 1 use the same call pattern and would
- *   block forever. Probe: NULL context returns TRUE; a non-NULL out-parameter
- *   with a callback that does not store a context also returns TRUE; only the
- *   store-plus-out-parameter combination fails. On real Windows every FALSE
- *   return is still a FAIL.
+ * Context values: InitOnceExecuteOnce / InitOnceComplete require the low two
+ *   bits of the context pointer to be zero (INIT_ONCE_CTX_RESERVED_BITS);
+ *   Windows 10 22H2: InitOnceComplete with such a context returns FALSE with
+ *   ERROR_INVALID_PARAMETER (87), and InitOnceExecuteOnce whose callback stores
+ *   one raises STATUS_INVALID_PARAMETER_3 (0xC00000F1). Step 5 checks both
+ *   (the exception on a scratch thread); values 0x4, 0x7c, 0x78 and 0xBEE8 are
+ *   accepted. (Earlier revisions stored 0xBEEF
+ *   and 0x77, which Windows rejects; wine tolerates both.)
  *
  * curl reference: curl does not use INIT_ONCE directly; the once semantics are
  *   what curl's global init relies on when libcurl is initialised from several
@@ -43,15 +42,8 @@
 #define TEST_NAME "init_once_execute"
 #define FAILF(...) do { printf("FAIL %s: ", TEST_NAME); printf(__VA_ARGS__); printf("\n"); return 1; } while (0)
 
-/* true when running under wine (ntdll exports wine_get_version) */
-static BOOL running_on_wine(void)
-{
-  HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-  return ntdll && GetProcAddress(ntdll, "wine_get_version");
-}
-
 #define RACERS 8
-#define CTX_VALUE ((PVOID)(ULONG_PTR)0xBEEF)
+#define CTX_VALUE ((PVOID)(ULONG_PTR)0xBEE8)
 
 static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
 static INIT_ONCE once_fail = INIT_ONCE_STATIC_INIT;
@@ -100,6 +92,33 @@ typedef struct {
 
 static racer_result results[RACERS];
 
+static volatile LONG veh_code = 0;
+
+/* records the exception and ends the scratch thread with a marker code */
+static LONG CALLBACK veh(PEXCEPTION_POINTERS ep)
+{
+  veh_code = (LONG)ep->ExceptionRecord->ExceptionCode;
+  ExitThread(0xDEAD);
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static BOOL CALLBACK bad_ctx_cb(PINIT_ONCE io, PVOID param, PVOID *ctx)
+{
+  (void)io;
+  (void)param;
+  *ctx = (PVOID)(ULONG_PTR)0x77; /* low two bits set */
+  return TRUE;
+}
+
+static DWORD WINAPI bad_ctx_thread(LPVOID p)
+{
+  static INIT_ONCE bad = INIT_ONCE_STATIC_INIT;
+  PVOID c = NULL;
+  (void)p;
+  InitOnceExecuteOnce(&bad, bad_ctx_cb, NULL, &c);
+  return 0;
+}
+
 static DWORD WINAPI racer(LPVOID p)
 {
   racer_result *r = (racer_result *)p;
@@ -118,22 +137,15 @@ int main(void)
   BOOL pending = FALSE;
 
   /* 0. single caller with a context out-parameter: must succeed and return
-   * the context. Under wine 9.0 this returns FALSE with GLE=0 although the
-   * callback returned TRUE (wine gap, see header); the racers below would then
-   * hang, so on wine this check is reported as SKIP and the run stops here.
-   * On real Windows a FALSE return is a FAIL. */
+   * the context. */
   {
     static INIT_ONCE once_single = INIT_ONCE_STATIC_INIT;
     PVOID sctx = NULL;
     ok = InitOnceExecuteOnce(&once_single, single_ctx_cb, NULL, &sctx);
-    if(!ok && running_on_wine()) {
-      printf("SKIP %s: wine gap - InitOnceExecuteOnce with non-NULL context out-param returns FALSE (GLE=%lu) although callback returned TRUE; Windows documents TRUE\n", TEST_NAME, GetLastError());
-      return 77;
-    }
     if(!ok)
       FAILF("single InitOnceExecuteOnce with context out-param returned FALSE although callback returned TRUE (GLE=%lu)", GetLastError());
     if(sctx != CTX_VALUE)
-      FAILF("single InitOnceExecuteOnce context %p, expected 0xBEEF", sctx);
+      FAILF("single InitOnceExecuteOnce context %p, expected 0xBEE8", sctx);
   }
 
   /* 1. race: 8 threads, exactly one callback invocation */
@@ -153,7 +165,7 @@ int main(void)
     if(!results[i].ok)
       FAILF("racer %d got FALSE from InitOnceExecuteOnce", i);
     if(results[i].ctx != CTX_VALUE)
-      FAILF("racer %d context %p, expected 0xBEEF", i, results[i].ctx);
+      FAILF("racer %d context %p, expected 0xBEE8", i, results[i].ctx);
   }
 
   /* 2. a second call after success does not run the callback again */
@@ -183,15 +195,45 @@ int main(void)
   ok = InitOnceBeginInitialize(&once_manual, 0, &pending, NULL);
   if(!ok || !pending)
     FAILF("InitOnceBeginInitialize first call: ok=%d pending=%d (GLE=%lu)", ok, pending, GetLastError());
-  if(!InitOnceComplete(&once_manual, 0, (PVOID)(ULONG_PTR)0x77))
+  if(!InitOnceComplete(&once_manual, 0, (PVOID)(ULONG_PTR)0x78))
     FAILF("InitOnceComplete failed (GLE=%lu)", GetLastError());
   pending = TRUE;
   ctx = NULL;
   ok = InitOnceBeginInitialize(&once_manual, 0, &pending, &ctx);
   if(!ok || pending)
     FAILF("InitOnceBeginInitialize after complete: ok=%d pending=%d", ok, pending);
-  if(ctx != (PVOID)(ULONG_PTR)0x77)
-    FAILF("manual context %p, expected 0x77", ctx);
+  if(ctx != (PVOID)(ULONG_PTR)0x78)
+    FAILF("manual context %p, expected 0x78", ctx);
+
+  /* 5. a context with low bits set: InitOnceComplete fails with
+   * ERROR_INVALID_PARAMETER, InitOnceExecuteOnce (callback stores the bad
+   * value) raises STATUS_INVALID_PARAMETER_3 */
+  {
+    static INIT_ONCE manual = INIT_ONCE_STATIC_INIT;
+    BOOL pend = FALSE;
+    if(!InitOnceBeginInitialize(&manual, 0, &pend, NULL) || !pend)
+      FAILF("Begin for the bad-context check failed");
+    SetLastError(0);
+    if(InitOnceComplete(&manual, 0, (PVOID)(ULONG_PTR)0x77) || GetLastError() != ERROR_INVALID_PARAMETER)
+      FAILF("InitOnceComplete(context 0x77): expected FALSE / 87 (GLE=%lu)", (unsigned long)GetLastError());
+    if(!InitOnceComplete(&manual, 0, (PVOID)(ULONG_PTR)0x7c))
+      FAILF("InitOnceComplete(context 0x7c) failed (GLE=%lu)", (unsigned long)GetLastError());
+  }
+  {
+    PVOID h = AddVectoredExceptionHandler(1, veh);
+    HANDLE t = CreateThread(NULL, 0, bad_ctx_thread, NULL, 0, NULL);
+    DWORD code = 0;
+    if(!t)
+      FAILF("CreateThread(bad ctx) failed (GLE=%lu)", GetLastError());
+    if(WaitForSingleObject(t, 20000) != WAIT_OBJECT_0)
+      FAILF("bad-context thread did not end");
+    GetExitCodeThread(t, &code);
+    CloseHandle(t);
+    RemoveVectoredExceptionHandler(h);
+    if(code != 0xDEAD || (ULONG)veh_code != 0xC00000F1UL)
+      FAILF("InitOnceExecuteOnce storing context 0x77: thread=0x%lx exception=0x%lx, "
+            "expected 0xDEAD / 0xC00000F1", (unsigned long)code, (unsigned long)veh_code);
+  }
 
   printf("PASS %s\n", TEST_NAME);
   return 0;
