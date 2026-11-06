@@ -9,7 +9,8 @@
  * Success: the chosen function returns FILETIMEs that convert to a unix
  *          time between 2020-01-01 and 2100-01-01; 1000 samples are
  *          non-decreasing; the precise and legacy clocks agree within 2 s.
- *          If GetSystemTimeAsFileTime itself is missing the test SKIPs.
+ *          GetSystemTimePreciseAsFileTime must be exported on Windows 10 (probed);
+ *          only under wine a missing export falls back to the legacy clock.
  * Source: none in curl's Windows code path for the precise clock; curl's
  *         wall-clock consumers (lib/parsedate.c) only need unix seconds.
  *         This test covers the Windows primitive itself, which curl does
@@ -65,9 +66,17 @@ int main(void)
   precise = (pfn_filetime_t)(void *)GetProcAddress(k32, "GetSystemTimePreciseAsFileTime");
   legacy = (pfn_filetime_t)(void *)GetProcAddress(k32, "GetSystemTimeAsFileTime");
   if(!legacy) {
-    printf("SKIP timing_system_time_precise_gpa: GetSystemTimeAsFileTime not exported\n");
+    printf("FAIL timing_system_time_precise_gpa: GetSystemTimeAsFileTime not exported\n");
     FreeLibrary(k32);
-    return 77;
+    return 1;
+  }
+  if(!precise) {
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    if(!(nt && GetProcAddress(nt, "wine_get_version"))) {
+      printf("FAIL timing_system_time_precise_gpa: GetSystemTimePreciseAsFileTime not exported by kernel32 on Windows 10\n");
+      FreeLibrary(k32);
+      return 1;
+    }
   }
   chosen = precise ? precise : legacy;
 

@@ -6,12 +6,13 @@
  *          it with timeEndPeriod.
  * APIs: timeGetDevCaps, timeBeginPeriod, timeEndPeriod, timeGetTime (winmm),
  *       Sleep, QueryPerformanceCounter
- * Success: timeGetDevCaps returns MMSYSERR_NOERROR with 0 < wPeriodMin <=
- *          wPeriodMax; timeBeginPeriod(wPeriodMin) returns TIMERR_NOERROR
- *          (or the test SKIPs on TIMERR_NOCANDO); timeGetTime advances by at
+ * Success: timeGetDevCaps returns MMSYSERR_NOERROR with wPeriodMin == 1 and
+ *          wPeriodMax == 1000000 (probed on Windows 10 22H2);
+ *          timeBeginPeriod(1) returns TIMERR_NOERROR; timeGetTime advances by at
  *          least 25 ms across Sleep(30); 20 x Sleep(1) completes in under
- *          250 ms in at least one of up to three batches (a stuck 15.6 ms
- *          tick would take about 312 ms in every batch); timeEndPeriod
+ *          100 ms (measured 40.0 ms) in at least one of up to three
+ *          batches (a stuck 15.6 ms tick would take about 312 ms in every
+ *          batch); timeEndPeriod
  *          returns TIMERR_NOERROR.
  * Source: curl lib/curlx/wait.c:73 (Sleep() is the wait primitive used for
  *         curl's timeouts; its granularity follows timeBeginPeriod). Winmm
@@ -44,17 +45,18 @@ int main(void)
     printf("FAIL timing_timebeginperiod_winmm: timeGetDevCaps returned %u\n", (unsigned)r);
     return 1;
   }
-  if(tc.wPeriodMin == 0 || tc.wPeriodMin > tc.wPeriodMax) {
-    printf("FAIL timing_timebeginperiod_winmm: bad timer range %u..%u ms\n",
+  printf("INFO timeGetDevCaps min=%u max=%u\n", (unsigned)tc.wPeriodMin, (unsigned)tc.wPeriodMax);
+  if(tc.wPeriodMin != 1 || tc.wPeriodMax != 1000000) {
+    printf("FAIL timing_timebeginperiod_winmm: timer range %u..%u ms, expected 1..1000000 on Windows 10\n",
            (unsigned)tc.wPeriodMin, (unsigned)tc.wPeriodMax);
     return 1;
   }
 
   r = timeBeginPeriod(tc.wPeriodMin);
   if(r == TIMERR_NOCANDO) {
-    printf("SKIP timing_timebeginperiod_winmm: timer resolution %u ms not supported\n",
+    printf("FAIL timing_timebeginperiod_winmm: timer resolution %u ms refused (TIMERR_NOCANDO)\n",
            (unsigned)tc.wPeriodMin);
-    return 77;
+    return 1;
   }
   if(r != TIMERR_NOERROR) {
     printf("FAIL timing_timebeginperiod_winmm: timeBeginPeriod returned %u\n", (unsigned)r);
@@ -100,12 +102,13 @@ int main(void)
     ms = ((double)(q1.QuadPart - q0.QuadPart) * 1000.0) / (double)f.QuadPart;
     if(best_ms < 0.0 || ms < best_ms)
       best_ms = ms;
-    if(best_ms <= 250.0)
+    if(best_ms <= 100.0)
       break;
   }
-  if(best_ms > 250.0) {
+  printf("INFO 20 x Sleep(1) under timeBeginPeriod(%u): %.1f ms\n", (unsigned)tc.wPeriodMin, best_ms);
+  if(best_ms > 100.0) {
     timeEndPeriod(tc.wPeriodMin);
-    printf("FAIL timing_timebeginperiod_winmm: 20 x Sleep(1) took %.1f ms (best of 3) under %u ms resolution\n",
+    printf("FAIL timing_timebeginperiod_winmm: 20 x Sleep(1) took %.1f ms (best of 3, measured 40.0) under %u ms resolution\n",
            best_ms, (unsigned)tc.wPeriodMin);
     return 1;
   }

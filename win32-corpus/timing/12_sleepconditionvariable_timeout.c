@@ -9,7 +9,9 @@
  *       SleepConditionVariableCS, WakeConditionVariable, CreateThread,
  *       WaitForSingleObject, GetExitCodeThread, QueryPerformanceCounter
  * Success: a 30 ms timed wait returns FALSE, GetLastError()==ERROR_TIMEOUT,
- *          and takes at least 20 ms; a waiter thread blocked on a flag
+ *          and takes at least 10 ms (Windows rounds the wait to its 15.6 ms
+ *          clock tick: measured 17.6-19.3 ms for a 30 ms wait, 3 times in 40
+ *          runs, so an exact lower bound would be flaky); a waiter thread blocked on a flag
  *          observes the flag after the main thread sets it and calls
  *          WakeConditionVariable, and exits with code 0 (condition met)
  *          within 10 s.
@@ -105,8 +107,8 @@ int main(void)
     DeleteCriticalSection(&s.cs);
     return 1;
   }
-  if(ms < 20.0) {
-    printf("FAIL timing_sleepconditionvariable_timeout: 30 ms timed wait returned after %.1f ms\n", ms);
+  if(ms < 10.0 || ms > 1000.0) {
+    printf("FAIL timing_sleepconditionvariable_timeout: 30 ms timed wait returned after %.1f ms (10..1000 expected)\n", ms);
     DeleteCriticalSection(&s.cs);
     return 1;
   }

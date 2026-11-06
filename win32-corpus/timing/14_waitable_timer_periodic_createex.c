@@ -4,12 +4,14 @@
  *          period and stops after CancelWaitableTimer. CreateWaitableTimerExW
  *          (Windows 10 1803+) is resolved with GetProcAddress and the test
  *          SKIPs when it is not exported; the high-resolution flag is tried
- *          first and the plain form is used if the flag is rejected.
+ *          first (it must be accepted on Windows; the plain form is the
+ *          fallback only under wine).
  * APIs: GetProcAddress, CreateWaitableTimerExW (dynamic), SetWaitableTimer,
  *       WaitForSingleObject, CancelWaitableTimer, QueryPerformanceCounter,
  *       CloseHandle
  * Success: five consecutive waits each return WAIT_OBJECT_0 within 2 s, the
- *          five ticks span at least 30 ms (period 10 ms); after
+ *          five ticks span 45..80 ms (period 10 ms; measured 51 ms with the
+ *          high-resolution timer, which Windows 10 22H2 accepts); after
  *          CancelWaitableTimer and draining any in-flight signal, a 50 ms
  *          pause followed by a zero-timeout wait returns WAIT_TIMEOUT.
  * Source: curl does not use waitable timers (grep finds none in lib/); this
@@ -72,6 +74,12 @@ int main(void)
       FreeLibrary(k32);
       return 77;
     }
+    printf("INFO CREATE_WAITABLE_TIMER_HIGH_RESOLUTION failed, error %lu\n", (unsigned long)err);
+    if(!GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version")) {
+      printf("FAIL timing_waitable_timer_periodic_createex: the high-resolution flag is rejected on Windows 10 (error %lu)\n", (unsigned long)err);
+      FreeLibrary(k32);
+      return 1;
+    }
     timer = create_ex(NULL, NULL, 0, TIMER_ALL_ACCESS);
     if(!timer) {
       printf("FAIL timing_waitable_timer_periodic_createex: CreateWaitableTimerExW error %lu\n",
@@ -81,6 +89,7 @@ int main(void)
     }
   }
 
+  printf("INFO high resolution timer created\n");
   /* Auto-reset periodic timer, first due in 10 ms, period 10 ms. */
   due.QuadPart = -100000LL;
   if(!SetWaitableTimer(timer, &due, 10, NULL, NULL, FALSE)) {
@@ -115,8 +124,9 @@ int main(void)
     return 1;
   }
   ms = ((double)(b.QuadPart - a.QuadPart) * 1000.0) / (double)f.QuadPart;
-  if(ms < 30.0) {
-    printf("FAIL timing_waitable_timer_periodic_createex: five 10 ms ticks spanned only %.1f ms\n", ms);
+  printf("INFO five 10 ms ticks spanned %.2f ms\n", ms);
+  if(ms < 45.0 || ms > 80.0) {
+    printf("FAIL timing_waitable_timer_periodic_createex: five 10 ms ticks spanned %.1f ms, expected 45..80\n", ms);
     CloseHandle(timer);
     FreeLibrary(k32);
     return 1;
