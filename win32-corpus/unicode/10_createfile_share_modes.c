@@ -15,8 +15,8 @@
  *          - h2 = CreateFileW(GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE)
  *            fails with ERROR_SHARING_VIOLATION (32)
  *          - h3 = CreateFileW(GENERIC_READ, FILE_SHARE_READ) succeeds
- *          - DeleteFileW while h1 is open fails (ERROR_SHARING_VIOLATION 32
- *            or ERROR_ACCESS_DENIED 5)
+ *          - DeleteFileW while h1 is open fails with ERROR_SHARING_VIOLATION (32,
+ *            probed on Windows 10 22H2)
  *          - after closing h1 and h3, h4 = CreateFileW(GENERIC_READ,
  *            FILE_SHARE_READ|FILE_SHARE_DELETE) is valid and DeleteFileW
  *            succeeds while h4 is still open
@@ -108,8 +108,8 @@ int main(void)
   SetLastError(0);
   CHECK(!DeleteFileW(path), "DeleteFileW succeeded while h1 is open");
   err = GetLastError();
-  CHECK(err == ERROR_SHARING_VIOLATION || err == ERROR_ACCESS_DENIED,
-        "delete error %lu, expected 32 or 5", (unsigned long)err);
+  CHECK(err == ERROR_SHARING_VIOLATION,
+        "delete error %lu, expected 32", (unsigned long)err);
 
   /* the file must still be there */
   CHECK(GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES,

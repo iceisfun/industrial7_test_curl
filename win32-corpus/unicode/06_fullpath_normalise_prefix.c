@@ -5,7 +5,7 @@
  *          a size query, then the real call into a sized buffer, then the
  *          file-part pointer. Covers "." and ".." removal, forward slashes,
  *          relative names resolved against the current directory, and the
- *          documented rule that a \\?\ prefixed path is returned unchanged.
+ *          fact that a \\?\ prefixed path is still normalised for '..'.
  *
  * APIs:    GetFullPathNameW, GetCurrentDirectoryW, GetLastError
  *
@@ -19,16 +19,15 @@
  *            (6 characters plus terminator); a 3-character buffer returns 7
  *            and writes nothing useful
  *          - lpFilePart points at "b" for "C:\\a\\b"
- *          - "\\\\?\\C:\\a\\..\\b" is returned unchanged (prefix disables
- *            normalisation)
+ *          - "\\\\?\\C:\\a\\..\\b" yields "\\\\?\\C:\\b" (8 characters):
+ *            probed on Windows 10 22H2, GetFullPathNameW normalises '..'
+ *            inside a \\?\ path (the documentation says it does not;
+ *            wine and Windows agree)
  *
- * Known difference: Wine normalises ".." inside a \\?\ path (returns 8 for
- *            the last case) while the Windows documentation says \\?\ paths
- *            are passed through unchanged (13). The Windows assertion is kept
- *            as is. When wine returns exactly that normalised result the test
- *            prints SKIP (exit 77) and names the wine gap. Any other result
- *            still FAILs. curl is not affected: fix_excessive_path() returns
- *            early for \\?\ input.
+ * Note:    the Microsoft documentation says \\?\ paths skip normalisation.
+ *          That is true for CreateFileW, not for GetFullPathNameW, which
+ *          resolves '..' (8 for the last case). curl is not affected:
+ *          fix_excessive_path() returns early for \\?\ input.
  *
  * Source:  lib/curlx/win32-fopen.c:108-252 (fix_excessive_path) calls
  *          GetFullPathName to turn the input into a canonical absolute path
@@ -122,24 +121,11 @@ int main(void)
   CHECK(n == 6, "plain returned %lu, expected 6", (unsigned long)n);
   CHECK(part != NULL && wcscmp(part, L"b") == 0, "plain file part wrong");
 
-  /* 8. \\?\ prefix: no normalisation, string returned as given */
+  /* 8. \\?\ prefix: '..' is still resolved (probed on Win10 22H2) */
   n = GetFullPathNameW(L"\\\\?\\C:\\a\\..\\b", MAX_PATH * 2, out, NULL);
-  /* Wine gap: wine normalises ".." inside a \\?\ path and returns the
-     8-character "\\?\C:\b". Windows returns the input unchanged (13).
-     curl never hits this: fix_excessive_path() returns early for \\?\ input.
-     Only that exact wine output is skipped; any other result still FAILs. */
-  if(n == 8 && wcscmp(out, L"\\\\?\\C:\\b") == 0) {
-    printf("SKIP %s: wine gap, GetFullPathNameW normalises '..' inside a "
-           "\\\\?\\ path (returned 8, '\\\\?\\C:\\b'); Windows returns the "
-           "path unchanged (13); curl does not rely on this\n", NAME);
-    rc = 77;
-    goto out;
-  }
-  CHECK(n == wcslen(L"\\\\?\\C:\\a\\..\\b"),
-        "prefixed returned %lu, expected %lu", (unsigned long)n,
-        (unsigned long)wcslen(L"\\\\?\\C:\\a\\..\\b"));
-  CHECK(wcscmp(out, L"\\\\?\\C:\\a\\..\\b") == 0,
-        "prefixed path was normalised to '%ls'", out);
+  CHECK(n == 8, "prefixed returned %lu, expected 8", (unsigned long)n);
+  CHECK(wcscmp(out, L"\\\\?\\C:\\b") == 0,
+        "prefixed path is '%ls', expected '\\\\?\\C:\\b'", out);
 
   printf("PASS %s\n", NAME);
 

@@ -22,7 +22,8 @@
  *            previous mode _O_BINARY (0x8000)
  *          - fputws(L"h\u00e9\u20ac\n") writes 68 00 E9 00 AC 20 followed by
  *            the newline. A byte-order mark FF FE in front is CRT dependent
- *            (wine writes none), so it is accepted but not required. The
+ *            (wine writes none); on Windows (probed, msvcrt) none is written and
+ *            exactly 10 bytes result. The
  *            newline is accepted as LF or CR LF for the same reason
  *            (wine writes CR LF)
  *
@@ -132,6 +133,11 @@ int main(void)
   memset(raw, 0, sizeof(raw));
   got = fread(raw, 1, sizeof(raw), f);
   /* optional BOM (CRT dependent), then h e-acute euro, then the newline */
+  printf("INFO U16TEXT wrote %lu bytes, first four %02x %02x %02x %02x, console_err=%lu\n", (unsigned long)got, raw[0], raw[1], raw[2], raw[3], (unsigned long)console_err);
+  if(!GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version"))
+    CHECK(got == 10 && !(raw[0] == 0xFF && raw[1] == 0xFE),
+          "on Windows (msvcrt) _O_U16TEXT writes 10 bytes, no BOM, CR LF: got %lu",
+          (unsigned long)got);
   off = (got >= 2 && raw[0] == 0xFF && raw[1] == 0xFE) ? 2 : 0;
   CHECK(got - off == 6 + 2 || got - off == 6 + 4,
         "U16 payload is %lu bytes after BOM, expected 8 or 10",
